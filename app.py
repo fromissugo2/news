@@ -19,6 +19,11 @@ CATEGORIES = {
     "엔비디아": "NVIDIA OR NVDA",
     "테슬라": "Tesla OR TSLA",
     "일론 머스크": '"Elon Musk"'
+    "AI/NVIDIA": "NVIDIA OR NVDA OR Blackwell",
+    "빅테크": "Tesla OR Apple OR Microsoft OR Google",
+    "전력 인프라": "Data Center Energy OR Vertiv OR VRT",
+    "반도체": "Broadcom OR AVGO OR TSMC",
+    "로보틱스": "Humanoid Robot OR Tesla Optimus OR Figure AI"
 }
 
 # 3. 뉴스 수집 함수 (가장 기본적이고 빠른 RSS 수집)
