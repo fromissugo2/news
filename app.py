@@ -5,15 +5,25 @@ from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 import urllib.parse
 import pytz
+import requests # 진짜 주소를 찾기 위해 추가
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
 st.title("📡 실시간 외신 테크 뉴스 허브")
 
-# 1분마다 자동 새로고침
 st_autorefresh(interval=60000, key="news_refresh")
 
-# 2. 카테고리 정의
+# 2. [핵심] 구글 뉴스 링크를 진짜 기사 원문 링크로 변환하는 함수
+@st.cache_data(ttl=3600)
+def get_real_url(google_url):
+    try:
+        # 구글 뉴스 링크에 접속해서 최종 도착지 URL을 알아냅니다.
+        response = requests.get(google_url, timeout=5)
+        return response.url
+    except:
+        return google_url # 실패 시 원래 링크 반환
+
+# 3. 뉴스 수집 및 카테고리 정의
 CATEGORIES = {
     "AI": "AI OR Artificial Intelligence",
     "반도체": "Semiconductor OR Chips",
@@ -22,7 +32,6 @@ CATEGORIES = {
     "일론 머스크": '"Elon Musk"'
 }
 
-# 3. 뉴스 수집 함수
 def get_news_feed(category_name, query):
     encoded_query = urllib.parse.quote(f"{query} when:1h")
     url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
@@ -31,14 +40,14 @@ def get_news_feed(category_name, query):
     kst = pytz.timezone('Asia/Seoul')
     
     if hasattr(feed, 'entries'):
-        for entry in feed.entries[:10]:
+        for entry in feed.entries[:8]:
             try:
                 dt_utc = pd.to_datetime(entry.published, utc=True)
                 news_list.append({
                     "category": category_name,
                     "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
                     "title": entry.title,
-                    "link": entry.link,
+                    "google_link": entry.link, # 구글 중간 링크
                     "source": entry.source.title if hasattr(entry, 'source') else "News",
                     "dt": dt_utc
                 })
@@ -55,26 +64,26 @@ if all_news:
     df = pd.DataFrame(all_news).drop_duplicates(subset=['title']).sort_values(by="dt", ascending=False)
     
     st.subheader(f"📍 마지막 업데이트: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')} (KST)")
-    st.info("💡 명령어 박스 내용을 복사한 후 '🤖 Gemini 열기' 버튼을 클릭하세요.")
+    st.info("💡 명령어 박스에는 '진짜 원문 주소'가 자동으로 입력됩니다.")
     st.divider()
 
     for i, row in df.iterrows():
+        # [수정] 진짜 주소 추출
+        real_url = get_real_url(row['google_link'])
+        
         with st.container():
-            # 비율 조정: 기사 내용(3), 액션 버튼(1)
             col1, col2 = st.columns([3, 1.2])
             
             with col1:
                 st.markdown(f"### <{row['category']}> {row['title']}")
                 st.caption(f"🕒 {row['time']} | 출처: {row['source']}")
-                # 지저분한 URL 대신 깔끔한 버튼 배치
-                st.link_button("📄 원문 기사 보기", row['link'])
+                st.link_button("📄 원문 기사 직접 보기", real_url)
             
             with col2:
-                # 명령어 복사창
-                prompt_text = f"이 뉴스 기사 한국어로 번역하고 3줄로 핵심 요약해줘: {row['link']}"
+                # 이제 real_url을 명령어에 포함시킵니다.
+                prompt_text = f"이 뉴스 기사 한국어로 번역하고 3줄 요약해줘: {real_url}"
                 st.text_area("명령어 (전체 복사하세요)", value=prompt_text, height=90, key=f"copy_{i}")
                 
-                # Gemini 이동 버튼 (가장 강조)
                 st.link_button("🤖 Gemini 열기", "https://gemini.google.com/app", type="primary", use_container_width=True)
             
             st.divider()
