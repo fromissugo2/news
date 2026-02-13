@@ -3,7 +3,8 @@ import feedparser
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
-import urllib.parse  # URL 인코딩을 위한 라이브러리 추가
+import urllib.parse
+import pytz  # 시간대 변환을 위한 라이브러리
 
 # 페이지 설정
 st.set_page_config(page_title="Stock News Hub", layout="wide")
@@ -22,22 +23,36 @@ CATEGORIES = {
 }
 
 def get_category_news(category_name, query):
-    # 중요: 쿼리 내용을 URL 형식에 맞게 인코딩 (공백 -> %20 등)
     encoded_query = urllib.parse.quote(f"{query} when:1h")
     url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
     
     feed = feedparser.parse(url)
     news_data = []
     
+    # 한국 시간대 설정
+    kst = pytz.timezone('Asia/Seoul')
+    
     if hasattr(feed, 'entries'):
         for entry in feed.entries[:10]:
+            # 기사 발행 시간을 파이썬 datetime 객체로 변환
+            # 구글 RSS 시간 포맷을 파싱 (보통 '%a, %d %b %Y %H:%M:%S %Z')
+            dt_utc = pd.to_datetime(entry.published)
+            
+            # UTC 시간인 경우 한국 시간으로 변환
+            if dt_utc.tzinfo is None:
+                dt_utc = pytz.utc.localize(dt_utc)
+            dt_kst = dt_utc.astimezone(kst)
+            
+            # 보기 좋은 포맷으로 변환 (예: 02/13 14:30)
+            formatted_time = dt_kst.strftime('%m/%d %H:%M')
+
             news_data.append({
                 "카테고리": category_name,
-                "시간": entry.published,
+                "한국시간": formatted_time,
                 "제목": entry.title,
                 "링크": entry.link,
                 "출처": entry.source.title if hasattr(entry, 'source') else "Google News",
-                "dt": pd.to_datetime(entry.published)
+                "dt": dt_kst # 정렬용
             })
     return news_data
 
@@ -52,12 +67,10 @@ for cat_name, query in CATEGORIES.items():
 # 데이터 출력 로직
 if all_news:
     df = pd.DataFrame(all_news)
-    # 중복 기사 제거 (제목 기준)
     df = df.drop_duplicates(subset=['제목'])
-    # 최신순 정렬
     df = df.sort_values(by="dt", ascending=False)
 
-    st.subheader(f"📍 마지막 업데이트: {datetime.now().strftime('%H:%M:%S')}")
+    st.subheader(f"📍 마지막 업데이트: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')} (KST)")
     st.divider()
 
     for _, row in df.iterrows():
@@ -66,16 +79,15 @@ if all_news:
         with st.container():
             col1, col2 = st.columns([5, 1])
             with col1:
-                # 카테고리 강조 디자인
                 if row['카테고리'] in ["엔비디아", "테슬라"]:
                     st.success(display_text)
                 elif row['카테고리'] == "AI":
                     st.info(display_text)
                 else:
                     st.write(display_text)
-                st.caption(f"🕒 {row['시간']}")
+                st.caption(f"🕒 한국 시간: {row['한국시간']}")
             with col2:
                 st.link_button("기사 읽기", row['링크'])
             st.write("") 
 else:
-    st.warning("현재 새로 올라온 뉴스가 없습니다. 키워드를 확인하거나 잠시만 기다려주세요.")
+    st.warning("현재 새로 올라온 뉴스가 없습니다.")
