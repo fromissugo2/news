@@ -19,7 +19,7 @@ if "GEMINI_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
         # 최신 모델명 사용 (gemini-1.5-flash 또는 gemini-2.0-flash)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-flash-latest')
     except Exception as e:
         st.error(f"Gemini 초기화 실패: {e}")
 else:
