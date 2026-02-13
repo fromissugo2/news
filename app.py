@@ -4,16 +4,23 @@ import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 import urllib.parse
-import pytz  # 시간대 변환을 위한 라이브러리
+import pytz
+import google.generativeai as genai
+
+# 1. Gemini 설정 (Secrets에서 키 가져오기)
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash') # 속도가 빠른 flash 모델 추천
+except:
+    st.error("Gemini API 키 설정이 필요합니다.")
 
 # 페이지 설정
 st.set_page_config(page_title="Stock News Hub", layout="wide")
-st.title("🚀 카테고리별 외신 실시간 허브")
+st.title("🚀 AI 기반 외신 실시간 허브")
 
-# 1분마다 자동 새로고침
 st_autorefresh(interval=60000, key="newscheck")
 
-# 카테고리 정의
+# 카테고리 설정
 CATEGORIES = {
     "AI": "AI OR Artificial Intelligence",
     "반도체": "Semiconductor OR Chips",
@@ -22,72 +29,58 @@ CATEGORIES = {
     "일론 머스크": '"Elon Musk"'
 }
 
+# 번역 함수 정의
+def translate_with_gemini(text):
+    prompt = f"당신은 전문 경제 번역가입니다. 다음 영문 뉴스 제목과 요약을 한국어로 매끄럽게 번역해주세요. 전문 용어는 문맥에 맞게 번역하세요: \n\n{text}"
+    response = model.generate_content(prompt)
+    return response.text
+
 def get_category_news(category_name, query):
     encoded_query = urllib.parse.quote(f"{query} when:1h")
     url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
-    
     feed = feedparser.parse(url)
     news_data = []
-    
-    # 한국 시간대 설정
     kst = pytz.timezone('Asia/Seoul')
     
     if hasattr(feed, 'entries'):
-        for entry in feed.entries[:10]:
-            # 기사 발행 시간을 파이썬 datetime 객체로 변환
-            # 구글 RSS 시간 포맷을 파싱 (보통 '%a, %d %b %Y %H:%M:%S %Z')
+        for entry in feed.entries[:8]:
             dt_utc = pd.to_datetime(entry.published)
-            
-            # UTC 시간인 경우 한국 시간으로 변환
-            if dt_utc.tzinfo is None:
-                dt_utc = pytz.utc.localize(dt_utc)
             dt_kst = dt_utc.astimezone(kst)
-            
-            # 보기 좋은 포맷으로 변환 (예: 02/13 14:30)
-            formatted_time = dt_kst.strftime('%m/%d %H:%M')
-
             news_data.append({
                 "카테고리": category_name,
-                "한국시간": formatted_time,
+                "한국시간": dt_kst.strftime('%m/%d %H:%M'),
                 "제목": entry.title,
                 "링크": entry.link,
                 "출처": entry.source.title if hasattr(entry, 'source') else "Google News",
-                "dt": dt_kst # 정렬용
+                "요약": entry.summary, # 번역용 요약 데이터
+                "dt": dt_kst
             })
     return news_data
 
-# 모든 카테고리 뉴스 수집
+# 뉴스 수집 및 출력
 all_news = []
 for cat_name, query in CATEGORIES.items():
     try:
         all_news.extend(get_category_news(cat_name, query))
     except Exception as e:
-        st.error(f"{cat_name} 수집 중 오류 발생: {e}")
+        st.error(f"{cat_name} 수집 오류")
 
-# 데이터 출력 로직
 if all_news:
-    df = pd.DataFrame(all_news)
-    df = df.drop_duplicates(subset=['제목'])
-    df = df.sort_values(by="dt", ascending=False)
-
+    df = pd.DataFrame(all_news).drop_duplicates(subset=['제목']).sort_values(by="dt", ascending=False)
     st.subheader(f"📍 마지막 업데이트: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')} (KST)")
-    st.divider()
 
-    for _, row in df.iterrows():
-        display_text = f"<{row['카테고리']}>\n[{row['출처']}] {row['제목']}"
-        
+    for i, row in df.iterrows():
         with st.container():
-            col1, col2 = st.columns([5, 1])
+            col1, col2, col3 = st.columns([4, 1, 1])
             with col1:
-                if row['카테고리'] in ["엔비디아", "테슬라"]:
-                    st.success(display_text)
-                elif row['카테고리'] == "AI":
-                    st.info(display_text)
-                else:
-                    st.write(display_text)
-                st.caption(f"🕒 한국 시간: {row['한국시간']}")
+                st.markdown(f"**<{row['카테고리']}>** \n[{row['출처']}] {row['제목']}")
+                st.caption(f"🕒 {row['한국시간']}")
             with col2:
-                st.link_button("기사 읽기", row['링크'])
-            st.write("") 
-else:
-    st.warning("현재 새로 올라온 뉴스가 없습니다.")
+                st.link_button("기사 열기", row['リンク'])
+            with col3:
+                # 고유 키를 위해 인덱스(i) 사용
+                if st.button("Gemini 번역", key=f"btn_{i}"):
+                    with st.spinner('Gemini가 번역 중...'):
+                        translated_text = translate_with_gemini(f"제목: {row['제목']}\n요약: {row['요약']}")
+                        st.info(f"**🤖 Gemini 번역 결과:**\n\n{translated_text}")
+            st.divider()
