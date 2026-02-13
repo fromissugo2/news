@@ -8,7 +8,7 @@ import pytz
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
-st.title("📡 실시간 외신 테크 뉴스 허브 (링크 일치 완벽 버전)")
+st.title("📡 실시간 외신 테크 뉴스 허브")
 
 st_autorefresh(interval=60000, key="news_refresh")
 
