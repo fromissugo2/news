@@ -5,24 +5,36 @@ from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 import urllib.parse
 import pytz
-from googlenewsdecoder import decoderv2 # 구글 뉴스 전용 디코더 추가
+import requests
+from googlenewsdecoder import decoderv2
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
-st.title("📡 실시간 외신 테크 뉴스 허브")
+st.title("📡 실시간 외신 테크 뉴스 허브 (최종 보완)")
 
 st_autorefresh(interval=60000, key="news_refresh")
 
-# 2. [완벽 해결] 구글 암호화 링크를 진짜 주소로 디코딩
+# 2. [종합] 진짜 URL을 찾아내는 2단계 추적 함수
 @st.cache_data(ttl=3600)
-def get_real_url(google_url):
+def get_final_real_url(google_url):
     try:
-        # 암호화된 구글 RSS 링크를 실제 기사 주소로 복호화합니다.
+        # 1단계: 전용 디코더 시도
         decoded = decoderv2(google_url)
-        return decoded['decoded_url']
-    except Exception as e:
-        # 실패 시 차선책으로 원래 링크라도 반환
-        return google_url
+        real_url = decoded['decoded_url']
+        
+        # 2단계: 만약 디코딩된 주소가 여전히 google.com을 포함한다면 직접 헤더 추적
+        if "news.google.com" in real_url:
+            response = requests.head(real_url, allow_redirects=True, timeout=5)
+            real_url = response.url
+            
+        return real_url
+    except:
+        try:
+            # 3단계: 모든 시도 실패 시 직접 접속하여 최종 URL 확인
+            response = requests.get(google_url, timeout=5)
+            return response.url
+        except:
+            return google_url
 
 # 3. 뉴스 카테고리 정의
 CATEGORIES = {
@@ -33,7 +45,7 @@ CATEGORIES = {
     "일론 머스크": '"Elon Musk"'
 }
 
-# 4. 뉴스 수집 함수
+# 4. 뉴스 수집 및 출력 로직
 def get_news_feed(category_name, query):
     encoded_query = urllib.parse.quote(f"{query} when:1h")
     url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
@@ -56,38 +68,31 @@ def get_news_feed(category_name, query):
             except: continue
     return news_list
 
-# 5. 뉴스 수집 및 출력
+# 뉴스 수집 실행
 all_news = []
 for cat_name, query in CATEGORIES.items():
     all_news.extend(get_news_feed(cat_name, query))
 
+# 메인 화면 출력
 if all_news:
     df = pd.DataFrame(all_news).drop_duplicates(subset=['title']).sort_values(by="dt", ascending=False)
-    
-    st.subheader(f"📍 마지막 업데이트: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')} (KST)")
-    st.success("✅ 이제 '원문 보기'와 'AI 번역' 링크가 100% 일치합니다.")
-    st.divider()
+    st.info("💡 명령어 박스의 주소와 '원문 보기' 주소가 일치하도록 정밀 추적 중입니다.")
 
     for i, row in df.iterrows():
-        # 디코딩 실행 (진짜 URL 추출)
-        real_url = get_real_url(row['google_link'])
+        # 정밀 추적 실행
+        final_url = get_final_real_url(row['google_link'])
         
         with st.container():
             col1, col2 = st.columns([3, 1.2])
-            
             with col1:
                 st.markdown(f"### <{row['category']}> {row['title']}")
                 st.caption(f"🕒 {row['time']} | 출처: {row['source']}")
-                # 원문 기사 보기 버튼에 진짜 주소 연결
-                st.link_button("📄 원문 기사 직접 보기", real_url)
+                # 버튼에 최종 확인된 진짜 주소 연결
+                st.link_button("📄 원문 기사 직접 보기", final_url)
             
             with col2:
-                # Gemini 명령어에 진짜 주소 포함
-                prompt_text = f"이 뉴스 기사 한국어로 번역하고 자세히 요약해줘: {real_url}"
+                # Gemini 명령어에도 동일한 최종 주소 삽입
+                prompt_text = f"이 뉴스 기사 한국어로 번역하고 자세히 요약해줘: {final_url}"
                 st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=90, key=f"copy_{i}")
-                
                 st.link_button("🤖 Gemini 열기", "https://gemini.google.com/app", type="primary", use_container_width=True)
-            
             st.divider()
-else:
-    st.info("현재 수집된 뉴스가 없습니다.")
