@@ -7,61 +7,63 @@ import urllib.parse
 import pytz
 import google.generativeai as genai
 import re
-from newspaper import Article  # newspaper4k도 동일하게 Article을 사용합니다.
+from newspaper import Article
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
 st.title("📡 실시간 외신 테크 뉴스 & AI 전체 번역")
 
-# 1분마다 자동 새로고침
 st_autorefresh(interval=60000, key="news_refresh")
 
 # 2. Gemini 설정
 if "GEMINI_API_KEY" in st.secrets:
-    try:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        model = genai.GenerativeModel('gemini-flash-latest')
-    except Exception as e:
-        st.error(f"Gemini 초기화 실패: {e}")
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-flash-latest')
 else:
-    st.warning("⚠️ Streamlit Secrets에 GEMINI_API_KEY를 등록해주세요.")
+    st.warning("⚠️ Secrets에 API 키를 등록해주세요.")
 
-# 3. 본문 추출 및 번역 함수 (개선됨)
-def get_full_article_translation(url):
+# 3. 본문 추출 및 번역 함수 (백업 로직 추가)
+def get_full_article_translation(url, fallback_summary):
     try:
-        # 기사 본문 크롤링 (newspaper4k 활용)
         article = Article(url, language='en')
         article.download()
         article.parse()
         full_text = article.text
         
-        if not full_text or len(full_text) < 100:
-            return "⚠️ 기사 본문을 가져올 수 없습니다. 유료 기사이거나 차단된 페이지일 수 있습니다. 직접 원문 링크를 확인해주세요."
-
-        # Gemini에게 전체 번역 및 요약 요청
-        prompt = (
-            f"당신은 테크/경제 전문 번역가입니다. 아래 기사 전문을 한국어로 읽기 쉽게 번역해주세요. "
-            f"번역이 끝난 뒤에는 '### 💡 3줄 핵심 요약' 섹션을 만들어 내용을 요약해 주세요.\n\n"
-            f"기사 본문:\n{full_text[:4000]}" # 4000자까지 확장
-        )
+        # 본문 수집 성공 시
+        if full_text and len(full_text) > 200:
+            prompt = (
+                f"당신은 테크/경제 전문 번역가입니다. 아래 기사 전문을 한국어로 읽기 쉽게 번역해주세요.\n"
+                f"번역이 끝난 뒤에는 '### 💡 3줄 핵심 요약' 섹션을 만들어 내용을 요약해 주세요.\n\n"
+                f"기사 본문:\n{full_text[:4000]}"
+            )
+        # 본문 수집 실패 시 (RSS 요약 정보 활용)
+        else:
+            prompt = (
+                f"기사 본문 크롤링이 차단되어 요약 정보만 제공합니다. "
+                f"아래 제목과 짧은 요약을 바탕으로 어떤 내용의 기사인지 한국어로 설명해주고, "
+                f"예상되는 주요 내용을 추론해서 알려주세요.\n\n"
+                f"제목 및 요약:\n{fallback_summary}"
+            )
         
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"⚠️ 크롤링 또는 번역 중 오류 발생: {str(e)}"
+        return f"⚠️ 분석 중 오류 발생: {str(e)}"
 
 # 4. 새 창(Dialog) 정의
-@st.dialog("AI 전체 기사 번역", width="large")
-def show_full_translation(title, url):
+@st.dialog("AI 기사 상세 분석", width="large")
+def show_full_translation(title, url, summary):
     st.write(f"### {title}")
     st.caption(f"🔗 원문 주소: {url}")
     st.divider()
     
-    with st.spinner('실시간으로 기사 본문을 분석하고 번역하는 중입니다...'):
-        result = get_full_article_translation(url)
+    with st.spinner('기사 내용을 분석하는 중입니다...'):
+        # 본문 수집 실패를 대비해 RSS 요약(summary)도 함께 전달
+        result = get_full_article_translation(url, f"제목: {title}\n요약: {summary}")
         st.markdown(result)
 
-# 5. 뉴스 수집 로직 (카테고리별)
+# 5. 뉴스 수집 로직
 CATEGORIES = {
     "AI": "AI OR Artificial Intelligence",
     "반도체": "Semiconductor OR Chips",
@@ -73,7 +75,6 @@ CATEGORIES = {
 def get_news_feed(category_name, query):
     encoded_query = urllib.parse.quote(f"{query} when:1h")
     url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
-    
     feed = feedparser.parse(url)
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
@@ -82,18 +83,16 @@ def get_news_feed(category_name, query):
         for entry in feed.entries[:8]:
             try:
                 dt_utc = pd.to_datetime(entry.published, utc=True)
-                dt_kst = dt_utc.astimezone(kst)
-                
                 news_list.append({
                     "category": category_name,
-                    "time": dt_kst.strftime('%m/%d %H:%M'),
+                    "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
                     "title": entry.title,
                     "link": entry.link,
+                    "summary": entry.summary, # 백업용 요약 데이터 유지
                     "source": entry.source.title if hasattr(entry, 'source') else "News",
-                    "dt": dt_kst
+                    "dt": dt_utc
                 })
-            except:
-                continue
+            except: continue
     return news_list
 
 # 6. 메인 출력 화면
@@ -103,9 +102,6 @@ for cat_name, query in CATEGORIES.items():
 
 if all_news:
     df = pd.DataFrame(all_news).drop_duplicates(subset=['title']).sort_values(by="dt", ascending=False)
-    st.subheader(f"📍 업데이트: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')} (KST)")
-    st.divider()
-
     for i, row in df.iterrows():
         with st.container():
             col1, col2, col3 = st.columns([4, 0.8, 1])
@@ -115,9 +111,7 @@ if all_news:
             with col2:
                 st.link_button("원본 보기", row['link'])
             with col3:
-                # 팝업 대화창 실행
-                if st.button("AI 전체 번역", key=f"btn_{i}"):
-                    show_full_translation(row['title'], row['link'])
+                # 버튼 클릭 시 제목, 링크, 요약 정보를 모두 다이얼로그로 전달
+                if st.button("AI 전체 분석", key=f"btn_{i}"):
+                    show_full_translation(row['title'], row['link'], row['summary'])
             st.divider()
-else:
-    st.info("현재 수집된 새로운 뉴스가 없습니다. 1분 뒤 자동 갱신됩니다.")
