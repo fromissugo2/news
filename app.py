@@ -67,26 +67,27 @@ for cat_name, query in CATEGORIES.items():
     if res:
         all_news.extend(res)
 
-# 출력부
-if all_news:
-    df = pd.DataFrame(all_news).drop_duplicates(subset=['제목']).sort_values(by="dt", ascending=False)
-    st.subheader(f"📍 마지막 업데이트: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')} (KST)")
+# 번역 함수 보완
+def translate_with_gemini(text):
+    try:
+        current_model = genai.GenerativeModel('gemini-2.0-flash') 
+        prompt = f"전문 경제 번역가로서 다음 뉴스를 한국어로 번역해줘:\n\n{text}"
+        response = current_model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        # 한도 초과(ResourceExhausted) 에러 처리
+        if "429" in str(e) or "ResourceExhausted" in str(e):
+            return "⚠️ 현재 Gemini 무료 사용량이 일시적으로 소진되었습니다. 1~2분 후 다시 시도해주세요."
+        return f"⚠️ 번역 중 오류 발생: {str(e)}"
 
-    for i, row in df.iterrows():
-        with st.container():
-            col1, col2, col3 = st.columns([4, 1, 1])
-            with col1:
-                st.markdown(f"**<{row['카테고리']}>** \n[{row['출처']}] {row['제목']}")
-                st.caption(f"🕒 {row['한국시간']}")
-            with col2:
-                st.link_button("기사 열기", row['링크'])
-            with col3:
-                if "GEMINI_API_KEY" in st.secrets:
-                    if st.button("Gemini 번역", key=f"btn_{i}"):
-                        with st.spinner('번역 중...'):
-                            prompt = f"번역해줘: {row['제목']}"
-                            response = model.generate_content(prompt)
-                            st.info(f"🤖 **번역:** {response.text}")
+# 버튼 클릭 부분 (출력부)
+if st.button("Gemini 번역", key=f"btn_{i}"):
+    with st.spinner('번역 중...'):
+        result = translate_with_gemini(f"제목: {row['제목']}\n요약: {row['요약']}")
+        if "⚠️" in result:
+            st.warning(result) # 경고 메시지로 표시
+        else:
+            st.info(f"🤖 **Gemini 번역:**\n\n{result}")
             st.divider()
 else:
     st.info("현재 수집된 뉴스가 없습니다. 1분만 기다려보세요.")
