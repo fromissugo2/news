@@ -6,3 +6,4 @@ pytz
 google-generativeai
 newspaper4k
 lxml_html_clean
+requests
