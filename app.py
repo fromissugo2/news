@@ -40,6 +40,7 @@ def get_news_feed(category_name, query):
                 title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
                 source_part = entry.source.title if hasattr(entry, 'source') else "News Source"
                 
+                # 고유 ID 생성 (제목 해시)
                 item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
                 
                 news_list.append({
@@ -60,8 +61,8 @@ st.info("💡 **이용 가이드**: 아래 탭을 클릭하여 카테고리별 �
 # 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
 
-# 6. 각 탭별 뉴스 출력 루프
-for tab, (cat_name, query) in zip(tabs, CATEGORIES.items()):
+# 6. 각 탭별 뉴스 출력 루프 (enumerate를 추가하여 고유 키 생성)
+for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())):
     with tab:
         news_data = get_news_feed(cat_name, query)
         
@@ -71,11 +72,13 @@ for tab, (cat_name, query) in zip(tabs, CATEGORIES.items()):
         if news_data:
             df = pd.DataFrame(news_data).sort_values(by="dt", ascending=False)
             
-            # 뉴스 개수와 갱신 상태 안내 (st.caption 활용)
+            # 뉴스 개수와 갱신 상태 안내
             st.caption(f"🔥 현재 **{len(df)}개**의 최신 뉴스가 수집되었습니다. (마지막 갱신: {now_kst} | 60초 후 자동 업데이트)")
             
-            for _, row in df.iterrows():
-                widget_key = f"copy_{row['id']}_{cat_name}"
+            # 행 반복 시 인덱스(i)를 가져와 widget_key에 결합
+            for i, (_, row) in enumerate(df.iterrows()):
+                # 탭 인덱스 + 뉴스 인덱스 + 아이템 ID를 조합하여 중복 원천 차단
+                widget_key = f"copy_{tab_idx}_{i}_{row['id']}"
                 
                 with st.container():
                     col1, col2 = st.columns([3, 1.2])
