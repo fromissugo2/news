@@ -4,3 +4,4 @@ pandas
 streamlit-autorefresh
 pytz
 google-generativeai
+newspaper3k
