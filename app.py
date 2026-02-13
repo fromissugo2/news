@@ -14,16 +14,12 @@ st_autorefresh(interval=60000, key="news_refresh")
 
 # 2. 카테고리 정의
 CATEGORIES = {
-    "AI": "AI OR Artificial Intelligence",
-    "반도체": "Semiconductor OR Chips",
-    "엔비디아": "NVIDIA OR NVDA",
-    "테슬라": "Tesla OR TSLA",
-    "일론 머스크": '"Elon Musk"'
-    "AI/NVIDIA": "NVIDIA OR NVDA OR Blackwell",
-    "빅테크": "Tesla OR Apple OR Microsoft OR Google",
-    "전력 인프라": "Data Center Energy OR Vertiv OR VRT",
-    "반도체": "Broadcom OR AVGO OR TSMC",
-    "로보틱스": "Humanoid Robot OR Tesla Optimus OR Figure AI"
+    "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
+    "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO",
+    "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
+    "빅테크": "Apple OR Microsoft OR Google OR Meta",
+    "전력 인프라": "Data Center Energy OR Vertiv OR VRT OR NextEra",
+    "로보틱스": "Humanoid Robot OR Figure AI OR Boston Dynamics"
 }
 
 # 3. 뉴스 수집 함수 (가장 기본적이고 빠른 RSS 수집)
