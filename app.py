@@ -2,13 +2,12 @@ import streamlit as st
 import feedparser
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime
 import urllib.parse
 import pytz
 import hashlib
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Global Tech News Hub", layout="wide")
+st.set_page_config(page_title="Tech News Dashboard", layout="wide")
 st.title("📡 실시간 외신 테크 뉴스 허브")
 
 # 60초마다 자동 갱신
@@ -33,15 +32,12 @@ def get_news_feed(category_name, query):
     kst = pytz.timezone('Asia/Seoul')
     
     if hasattr(feed, 'entries'):
-        for entry in feed.entries[:8]:
+        for entry in feed.entries[:10]: # 탭별로 보여주므로 개수를 조금 늘려도 가독성이 좋습니다.
             try:
                 dt_utc = pd.to_datetime(entry.published, utc=True)
                 full_title = entry.title
                 title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
                 source_part = entry.source.title if hasattr(entry, 'source') else "News Source"
-                
-                # 고유 키 생성을 위한 해시값 (제목 기반)
-                # 이 값이 변해야 오른쪽 텍스트 영역이 갱신됩니다.
                 item_id = hashlib.md5(title_part.encode()).hexdigest()[:10]
                 
                 news_list.append({
@@ -56,55 +52,44 @@ def get_news_feed(category_name, query):
             except: continue
     return news_list
 
-# 4. 뉴스 데이터 통합
-all_news = []
-for cat_name, query in CATEGORIES.items():
-    all_news.extend(get_news_feed(cat_name, query))
+# 4. 탭 생성 (카테고리 이름으로 탭을 만듭니다)
+tab_titles = list(CATEGORIES.keys())
+tabs = st.tabs(tab_titles)
 
-# 5. 뉴스 출력부
-if all_news:
-    # 중복 제거 및 시간순 정렬
-    df = pd.DataFrame(all_news).drop_duplicates(subset=['title']).sort_values(by="dt", ascending=False)
-    
-    st.info("✅ 뉴스는 1분마다 자동 갱신됩니다. 기사가 바뀌면 복사할 명령어도 자동으로 업데이트됩니다.")
-
-    for i, row in df.iterrows():
-        # 고유 식별자 생성 (데이터와 위젯을 동기화하는 핵심)
-        widget_key = f"area_{row['id']}"
+# 5. 각 탭별로 뉴스 수집 및 출력
+for tab, (cat_name, query) in zip(tabs, CATEGORIES.items()):
+    with tab:
+        news_data = get_news_feed(cat_name, query)
         
-        with st.container():
-            col1, col2 = st.columns([3, 1.2])
+        if news_data:
+            # 시간순 정렬
+            df = pd.DataFrame(news_data).sort_values(by="dt", ascending=False)
             
-            with col1:
-                st.markdown(f"### <{row['category']}> {row['title']}")
-                st.caption(f"🕒 {row['time']} | 출처: {row['source']}")
-                st.link_button("📄 원문 기사 직접 보기", row['google_link'])
+            st.caption(f"📍 현재 {len(df)}개의 최신 뉴스가 있습니다. (1분 간격 자동 갱신)")
             
-            with col2:
-                # 명령어 구성
-                prompt_text = (
-                    f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
-                    f"1. **기사 전문 번역 및 상세 요약**\n"
-                    f"   - 기사 전체 내용을 한국어로 정확하게 번역\n"
-                    f"   - 핵심 내용을 놓침 없이 자세하게 요약\n\n"
-                    f"2. **국외(글로벌) 주식 시장 연관성**\n"
-                    f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
-                    f"3. **국내 주식 시장 연관성**\n"
-                    f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
-                    f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마\n\n"
-                    f"4. **투자자 관점의 최종 결론**\n"
-                    f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
-                )
+            for _, row in df.iterrows():
+                # 고유 키 생성
+                widget_key = f"area_{row['id']}_{cat_name}"
                 
-                # 수정 포인트: key에 데이터 고유 ID인 widget_key를 사용함
-                st.text_area(
-                    "명령어 복사 (Ctrl+C)", 
-                    value=prompt_text, 
-                    height=120, 
-                    key=widget_key
-                )
-                st.link_button("🤖 Gemini 열기", "https://gemini.google.com/app", type="primary", use_container_width=True)
-            
-            st.divider()
-else:
-    st.warning("가져올 뉴스가 없습니다. 잠시 후 다시 시도해주세요.")
+                with st.container():
+                    col1, col2 = st.columns([3, 1.2])
+                    
+                    with col1:
+                        st.markdown(f"### {row['title']}")
+                        st.caption(f"🕒 {row['time']} | 출처: {row['source']}")
+                        st.link_button(f"📄 {row['source']} 원문 보기", row['google_link'])
+                    
+                    with col2:
+                        prompt_text = (
+                            f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
+                            f"1. **기사 전문 번역 및 상세 요약**\n"
+                            f"2. **국외(글로벌) 주식 시장 연관성**\n"
+                            f"3. **국내 주식 시장 연관성**\n"
+                            f"4. **투자자 관점의 최종 결론**"
+                        )
+                        
+                        st.text_area("명령어 복사", value=prompt_text, height=100, key=widget_key)
+                        st.link_button("🤖 Gemini 실행", "https://gemini.google.com/app", type="primary", use_container_width=True)
+                    st.divider()
+        else:
+            st.info(f"현재 '{cat_name}' 카테고리에 새로운 뉴스가 없습니다.")
