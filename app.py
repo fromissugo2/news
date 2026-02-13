@@ -73,7 +73,19 @@ if all_news:
             with col2:
                 # [해결책] 링크 대신 '제목'과 '출처'를 조합해 Gemini에게 던집니다.
                 # 이렇게 하면 Gemini가 자신의 검색 능력을 사용해 정확한 기사를 찾아내어 번역합니다.
-                prompt_text = f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 한국어로 전문 번역하고 자세히 요약해줘."
+                prompt_text = prompt_text = (
+    f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
+    f"1. **기사 전문 번역 및 상세 요약**\n"
+    f"   - 기사 전체 내용을 한국어로 정확하게 번역\n"
+    f"   - 핵심 내용을 놓침 없이 자세하게 요약\n\n"
+    f"2. **국외(글로벌) 주식 시장 연관성**\n"
+    f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
+    f"3. **국내 주식 시장 연관성**\n"
+    f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
+    f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마(예: HBM, 자율주행 등)\n\n"
+    f"4. **투자자 관점의 최종 결론**\n"
+    f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
+)
                 
                 st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=90, key=f"copy_{i}")
                 st.link_button("🤖 Gemini 열기", "https://gemini.google.com/app", type="primary", use_container_width=True)
