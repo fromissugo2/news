@@ -33,7 +33,7 @@ def get_news_feed(category_name, query):
     kst = pytz.timezone('Asia/Seoul')
     
     if hasattr(feed, 'entries'):
-        for entry in feed.entries[:10]:
+        for entry in feed.entries[:30]:
             try:
                 dt_utc = pd.to_datetime(entry.published, utc=True)
                 full_title = entry.title
