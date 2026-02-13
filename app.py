@@ -18,7 +18,7 @@ st_autorefresh(interval=60000, key="newscheck")
 if "GEMINI_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
     except Exception as e:
         st.error(f"Gemini 연결 실패: {e}")
 else:
