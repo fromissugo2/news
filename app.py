@@ -36,7 +36,7 @@ def get_news_feed(category_name, query):
     if query == "CRYPTO_PANIC":
         try:
             # secrets.toml 또는 Streamlit Cloud Secrets에서 API 키를 가져옵니다.
-            api_key = st.secrets.get["CP_API_KEY"]
+            api_key = st.secrets.get("CP_API_KEY")
             
             if api_key:
                 # URL 끝에 /를 붙여 404 에러를 방지합니다.
