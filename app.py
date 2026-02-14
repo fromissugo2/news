@@ -32,68 +32,76 @@ def get_news_feed(category_name, query):
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
-    # --- Case 1: CryptoPanic API (가상화폐/머스크/AI 전용) ---
+    # --- Case 1: CryptoPanic API (무료 플랜 대응 버전) ---
     if query == "CRYPTO_PANIC":
         try:
-            # secrets.toml 또는 Streamlit Cloud Secrets에서 API 키를 가져옵니다.
             api_key = st.secrets.get("CP_API_KEY")
-            
+
             if api_key:
-                # URL 끝에 /를 붙여 404 에러를 방지합니다.
                 cp_url = "https://cryptopanic.com/api/v1/posts/"
+
+                # ✅ 무료 플랜 최소 파라미터
                 params = {
-                    "auth_token": api_key,
-                    "kind": "news",
-                    "filter": "hot",
-                    "public": "true"
+                    "auth_token": api_key
                 }
+
                 response = requests.get(cp_url, params=params, timeout=10)
-                
+
                 if response.status_code == 200:
                     data = response.json()
+
                     for entry in data.get('results', [])[:30]:
-                        dt_utc = pd.to_datetime(entry['published_at'], utc=True)
-                        # CryptoPanic은 흐름이 빠르므로 2시간 이내 뉴스까지 허용
-                        if (now_utc - dt_utc).total_seconds() > 7200:
+                        try:
+                            dt_utc = pd.to_datetime(entry['published_at'], utc=True)
+
+                            # 2시간 이내 뉴스만 허용
+                            if (now_utc - dt_utc).total_seconds() > 7200:
+                                continue
+
+                            title = entry['title']
+                            item_id = hashlib.md5(title.encode()).hexdigest()[:12]
+
+                            news_list.append({
+                                "id": item_id,
+                                "category": category_name,
+                                "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
+                                "title": title,
+                                "google_link": entry['url'],
+                                "source": entry.get('domain', 'CryptoPanic'),
+                                "dt": dt_utc
+                            })
+                        except:
                             continue
-                        
-                        title = entry['title']
-                        item_id = hashlib.md5(title.encode()).hexdigest()[:12]
-                        news_list.append({
-                            "id": item_id,
-                            "category": category_name,
-                            "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                            "title": title,
-                            "google_link": entry['url'],
-                            "source": entry.get('domain', 'CryptoPanic'),
-                            "dt": dt_utc
-                        })
                 else:
                     st.error(f"CryptoPanic API 응답 오류 (코드: {response.status_code})")
+                    st.caption(f"요청 URL: {response.url}")
+
             else:
                 st.warning("⚠️ CryptoPanic API 키가 설정되지 않았습니다. Secrets 설정을 확인하세요.")
+
         except Exception as e:
             st.error(f"CryptoPanic API 에러: {e}")
 
-    # --- Case 2: Google News RSS (기타 테크 카테고리) ---
+    # --- Case 2: Google News RSS ---
     else:
         encoded_query = urllib.parse.quote(f"{query} when:1h")
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
         feed = feedparser.parse(url)
-        
+
         if hasattr(feed, 'entries'):
             for entry in feed.entries[:50]:
                 try:
                     dt_utc = pd.to_datetime(entry.published, utc=True)
-                    # 1시간 이상 경과한 '뒷북 기사' 제외 (초 단위 필터)
+
+                    # 1시간 이상 경과 기사 제외
                     if (now_utc - dt_utc).total_seconds() > 3600:
                         continue
-                        
+
                     full_title = entry.title
                     title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
                     source_part = entry.source.title if hasattr(entry, 'source') else "News Source"
                     item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
-                    
+
                     news_list.append({
                         "id": item_id,
                         "category": category_name,
@@ -103,9 +111,9 @@ def get_news_feed(category_name, query):
                         "source": source_part,
                         "dt": dt_utc
                     })
-                except: continue
-                
-    # 최종 결과물 시간순 정렬
+                except:
+                    continue
+
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
 # 4. 상단 공통 안내
@@ -114,26 +122,27 @@ st.info("💡 **이용 가이드**: 탭을 클릭해 실시간 속보를 확인�
 # 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
 
-# 6. 각 탭별 뉴스 출력 루프
+# 6. 각 탭별 뉴스 출력
 for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())):
     with tab:
         news_data = get_news_feed(cat_name, query)
         now_kst = datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')
-        
+
         if news_data:
             df = pd.DataFrame(news_data)
             st.caption(f"🔥 현재 **{len(df)}개**의 최신 뉴스가 수집되었습니다. (마지막 갱신: {now_kst})")
-            
+
             for i, (_, row) in enumerate(df.iterrows()):
                 widget_key = f"copy_{tab_idx}_{i}_{row['id']}"
-                
+
                 with st.container():
                     col1, col2 = st.columns([3, 1.2])
+
                     with col1:
                         st.markdown(f"### {row['title']}")
                         st.caption(f"🕒 {row['time']} | 출처: {row['source']}")
                         st.link_button(f"📄 {row['source']} 원문 기사 보기", row['google_link'])
-                    
+
                     with col2:
                         prompt_text = (
                             f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
@@ -144,12 +153,15 @@ for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())
                             f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
                             f"3. **국내 주식 시장 연관성**\n"
                             f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
-                            f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마(예: HBM, 자율주행 등)\n\n"
+                            f"   - 연관된 국내 주식 종목과 관련 테마\n\n"
                             f"4. **투자자 관점의 최종 결론**\n"
-                            f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
+                            f"   - 시장 시그널 요약 및 투자 매력도 분석"
                         )
+
                         st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=150, key=widget_key)
                         st.link_button("🤖 Gemini 열기", "https://gemini.google.com/app", type="primary", use_container_width=True)
+
                     st.divider()
+
         else:
-            st.warning(f"현재 '{cat_name}' 카테고리에 최신 뉴스가 없습니다. (뒷북 기사 자동 필터링 중)")
+            st.warning(f"현재 '{cat_name}' 카테고리에 최신 뉴스가 없습니다. (자동 필터링 중)")
