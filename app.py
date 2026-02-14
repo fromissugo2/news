@@ -25,7 +25,8 @@ CATEGORIES = {
     "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
     "빅테크": "Apple OR Microsoft OR Google OR Meta",
     "전력 인프라": "Data Center Energy OR Vertiv OR VRT OR NextEra",
-    "로보틱스": "Humanoid Robot OR Figure AI OR Boston Dynamics"
+    "로보틱스": "Robot OR Robotics OR Humanoid OR 'AI Robot' OR Automation OR Boston Dynamics OR Figure AI OR Optimus"
+
 }
 
 # 3. 뉴스 수집 함수 (캐싱 + 1시간 필터 + 중복 제거)
