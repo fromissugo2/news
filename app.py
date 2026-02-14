@@ -2,7 +2,7 @@ import streamlit as st
 import feedparser
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime, timedelta
+from datetime import datetime
 import urllib.parse
 import pytz
 import hashlib
@@ -23,7 +23,7 @@ CATEGORIES = {
     "빅테크": "Apple OR Microsoft OR Google OR Meta",
     "전력 인프라": "Data Center Energy OR Vertiv OR VRT OR NextEra",
     "로보틱스": "Humanoid Robot OR Figure AI OR Boston Dynamics",
-    "가상화폐/머스크/AI": "CRYPTO_PANIC" # 특수 처리를 위한 플래그
+    "가상화폐/머스크/AI": "CRYPTO_PANIC"
 }
 
 # 3. 뉴스 수집 함수
@@ -35,33 +35,39 @@ def get_news_feed(category_name, query):
     # --- Case 1: CryptoPanic API (가상화폐/머스크/AI 전용) ---
     if query == "CRYPTO_PANIC":
         try:
-            # 무료 공개 API 호출 (필요시 API Key 추가 가능)
-            cp_url = "https://cryptopanic.com/api/v1/posts/?kind=news&filter=hot"
-            response = requests.get(cp_url, timeout=5)
-            data = response.json()
-            
-            for entry in data.get('results', [])[:30]:
-                dt_utc = pd.to_datetime(entry['published_at'], utc=True)
-                # 2시간 이내의 뜨거운 뉴스만 필터링
-                if (now_utc - dt_utc).total_seconds() > 7200:
-                    continue
+            # secrets.toml에서 API 키를 안전하게 가져옵니다.
+            if "CP_API_KEY" in st.secrets:
+                api_key = st.secrets["CP_API_KEY"]
+                cp_url = f"https://cryptopanic.com/api/v1/posts/?auth_token={api_key}&kind=news&filter=hot"
+                response = requests.get(cp_url, timeout=5)
                 
-                title = entry['title']
-                item_id = hashlib.md5(title.encode()).hexdigest()[:12]
-                
-                news_list.append({
-                    "id": item_id,
-                    "category": category_name,
-                    "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                    "title": title,
-                    "google_link": entry['url'],
-                    "source": entry.get('domain', 'CryptoPanic'),
-                    "dt": dt_utc
-                })
+                if response.status_code == 200:
+                    data = response.json()
+                    for entry in data.get('results', [])[:30]:
+                        dt_utc = pd.to_datetime(entry['published_at'], utc=True)
+                        # 2시간 이내의 뉴스만 필터링
+                        if (now_utc - dt_utc).total_seconds() > 7200:
+                            continue
+                        
+                        title = entry['title']
+                        item_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                        news_list.append({
+                            "id": item_id,
+                            "category": category_name,
+                            "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
+                            "title": title,
+                            "google_link": entry['url'],
+                            "source": entry.get('domain', 'CryptoPanic'),
+                            "dt": dt_utc
+                        })
+                else:
+                    st.error(f"CryptoPanic API 응답 오류 (코드: {response.status_code})")
+            else:
+                st.warning("CryptoPanic API 키가 설정되지 않았습니다. Secrets 설정을 확인하세요.")
         except Exception as e:
-            st.error(f"CryptoPanic API 오류: {e}")
+            st.error(f"CryptoPanic API 에러: {e}")
 
-    # --- Case 2: Google News RSS (나머지 카테고리) ---
+    # --- Case 2: Google News RSS (기존 카테고리) ---
     else:
         encoded_query = urllib.parse.quote(f"{query} when:1h")
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
@@ -71,16 +77,13 @@ def get_news_feed(category_name, query):
             for entry in feed.entries[:50]:
                 try:
                     dt_utc = pd.to_datetime(entry.published, utc=True)
-                    
-                    # [핵심] 뒷북 방지 필터: 1시간(3600초) 이상 지난 기사는 제외
-                    time_diff = (now_utc - dt_utc).total_seconds()
-                    if time_diff > 3600:
+                    # 1시간 이상 경과한 '뒷북 기사' 제외 필터
+                    if (now_utc - dt_utc).total_seconds() > 3600:
                         continue
                         
                     full_title = entry.title
                     title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
                     source_part = entry.source.title if hasattr(entry, 'source') else "News Source"
-                    
                     item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
                     
                     news_list.append({
@@ -97,7 +100,7 @@ def get_news_feed(category_name, query):
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
 # 4. 상단 공통 안내
-st.info("💡 **이용 가이드**: 탭을 클릭해 최신 뉴스를 확인하세요. 1시간 이내의 최신성 높은 기사만 노출됩니다.")
+st.info("💡 **이용 가이드**: 탭을 클릭해 실시간 속보를 확인하세요. 1시간 이내의 최신 기사만 표시됩니다.")
 
 # 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
