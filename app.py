@@ -32,51 +32,50 @@ def get_news_feed(category_name, query):
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
-#   --- Case 1: CryptoPanic API (가상화폐/머스크/AI 전용) ---
-if query == "CRYPTO_PANIC":
-    try:
-        # secrets에서 키 가져오기 (이름 오타 주의!)
-        api_key = st.secrets.get("CP_API_KEY")
-        
-        if api_key:
-            # 1. URL 끝에 슬래시(/)를 꼭 붙여주세요.
-            # 2. 파라미터 방식을 사용하면 오타 확률이 줄어듭니다.
-            cp_url = "https://cryptopanic.com/api/v1/posts/"
-            params = {
-                "auth_token": api_key,
-                "kind": "news",
-                "filter": "hot"
-            }
-            response = requests.get(cp_url, params=params, timeout=10)
+    # --- Case 1: CryptoPanic API (가상화폐/머스크/AI 전용) ---
+    if query == "CRYPTO_PANIC":
+        try:
+            # secrets.toml 또는 Streamlit Cloud Secrets에서 API 키를 가져옵니다.
+            api_key = st.secrets.get("CP_API_KEY")
             
-            if response.status_code == 200:
-                data = response.json()
-                # 이후 데이터 처리 로직...
-                for entry in data.get('results', [])[:30]:
-                    dt_utc = pd.to_datetime(entry['published_at'], utc=True)
-                    if (now_utc - dt_utc).total_seconds() > 7200:
-                        continue
-                    
-                    title = entry['title']
-                    item_id = hashlib.md5(title.encode()).hexdigest()[:12]
-                    news_list.append({
-                        "id": item_id,
-                        "category": category_name,
-                        "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                        "title": title,
-                        "google_link": entry['url'],
-                        "source": entry.get('domain', 'CryptoPanic'),
-                        "dt": dt_utc
-                    })
+            if api_key:
+                # URL 끝에 /를 붙여 404 에러를 방지합니다.
+                cp_url = "https://cryptopanic.com/api/v1/posts/"
+                params = {
+                    "auth_token": api_key,
+                    "kind": "news",
+                    "filter": "hot",
+                    "public": "true"
+                }
+                response = requests.get(cp_url, params=params, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    for entry in data.get('results', [])[:30]:
+                        dt_utc = pd.to_datetime(entry['published_at'], utc=True)
+                        # CryptoPanic은 흐름이 빠르므로 2시간 이내 뉴스까지 허용
+                        if (now_utc - dt_utc).total_seconds() > 7200:
+                            continue
+                        
+                        title = entry['title']
+                        item_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                        news_list.append({
+                            "id": item_id,
+                            "category": category_name,
+                            "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
+                            "title": title,
+                            "google_link": entry['url'],
+                            "source": entry.get('domain', 'CryptoPanic'),
+                            "dt": dt_utc
+                        })
+                else:
+                    st.error(f"CryptoPanic API 응답 오류 (코드: {response.status_code})")
             else:
-                st.error(f"CryptoPanic 응답 에러: {response.status_code}")
-        else:
-            # 여기가 실행된다면 설정창에 'CP_API_KEY'라는 이름이 없는 것입니다.
-            st.warning("⚠️ Streamlit Secrets에 'CP_API_KEY'가 설정되어 있지 않습니다.")
-    except Exception as e:
-        st.error(f"연결 오류: {e}")
+                st.warning("⚠️ CryptoPanic API 키가 설정되지 않았습니다. Secrets 설정을 확인하세요.")
+        except Exception as e:
+            st.error(f"CryptoPanic API 에러: {e}")
 
-    # --- Case 2: Google News RSS (기존 카테고리) ---
+    # --- Case 2: Google News RSS (기타 테크 카테고리) ---
     else:
         encoded_query = urllib.parse.quote(f"{query} when:1h")
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
@@ -86,7 +85,7 @@ if query == "CRYPTO_PANIC":
             for entry in feed.entries[:50]:
                 try:
                     dt_utc = pd.to_datetime(entry.published, utc=True)
-                    # 1시간 이상 경과한 '뒷북 기사' 제외 필터
+                    # 1시간 이상 경과한 '뒷북 기사' 제외 (초 단위 필터)
                     if (now_utc - dt_utc).total_seconds() > 3600:
                         continue
                         
@@ -106,10 +105,11 @@ if query == "CRYPTO_PANIC":
                     })
                 except: continue
                 
+    # 최종 결과물 시간순 정렬
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
 # 4. 상단 공통 안내
-st.info("💡 **이용 가이드**: 탭을 클릭해 실시간 속보를 확인하세요. 1시간 이내의 최신 기사만 표시됩니다.")
+st.info("💡 **이용 가이드**: 탭을 클릭해 실시간 속보를 확인하세요. 1시간 이내의 최신 기사만 표시됩니다. (가상화폐 탭은 2시간)")
 
 # 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
@@ -152,4 +152,4 @@ for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())
                         st.link_button("🤖 Gemini 열기", "https://gemini.google.com/app", type="primary", use_container_width=True)
                     st.divider()
         else:
-            st.warning(f"현재 '{cat_name}' 카테고리에 1시간 이내 등록된 최신 뉴스가 없습니다.")
+            st.warning(f"현재 '{cat_name}' 카테고리에 최신 뉴스가 없습니다. (뒷북 기사 자동 필터링 중)")
