@@ -2,10 +2,11 @@ import streamlit as st
 import feedparser
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime
+from datetime import datetime, timedelta
 import urllib.parse
 import pytz
 import hashlib
+import requests
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
@@ -21,75 +22,107 @@ CATEGORIES = {
     "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
     "빅테크": "Apple OR Microsoft OR Google OR Meta",
     "전력 인프라": "Data Center Energy OR Vertiv OR VRT OR NextEra",
-    "로보틱스": "Humanoid Robot OR Figure AI OR Boston Dynamics"
+    "로보틱스": "Humanoid Robot OR Figure AI OR Boston Dynamics",
+    "가상화폐/머스크/AI": "CRYPTO_PANIC" # 특수 처리를 위한 플래그
 }
 
 # 3. 뉴스 수집 함수
 def get_news_feed(category_name, query):
-    encoded_query = urllib.parse.quote(f"{query} when:1h")
-    url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
-    feed = feedparser.parse(url)
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
-    
-    if hasattr(feed, 'entries'):
-        for entry in feed.entries[:50]:
-            try:
-                dt_utc = pd.to_datetime(entry.published, utc=True)
-                full_title = entry.title
-                title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
-                source_part = entry.source.title if hasattr(entry, 'source') else "News Source"
+    now_utc = datetime.now(pytz.utc)
+
+    # --- Case 1: CryptoPanic API (가상화폐/머스크/AI 전용) ---
+    if query == "CRYPTO_PANIC":
+        try:
+            # 무료 공개 API 호출 (필요시 API Key 추가 가능)
+            cp_url = "https://cryptopanic.com/api/v1/posts/?kind=news&filter=hot"
+            response = requests.get(cp_url, timeout=5)
+            data = response.json()
+            
+            for entry in data.get('results', [])[:30]:
+                dt_utc = pd.to_datetime(entry['published_at'], utc=True)
+                # 2시간 이내의 뜨거운 뉴스만 필터링
+                if (now_utc - dt_utc).total_seconds() > 7200:
+                    continue
                 
-                # 고유 ID 생성 (제목 해시)
-                item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
+                title = entry['title']
+                item_id = hashlib.md5(title.encode()).hexdigest()[:12]
                 
                 news_list.append({
                     "id": item_id,
                     "category": category_name,
                     "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                    "title": title_part,
-                    "google_link": entry.link,
-                    "source": source_part,
+                    "title": title,
+                    "google_link": entry['url'],
+                    "source": entry.get('domain', 'CryptoPanic'),
                     "dt": dt_utc
                 })
-            except: continue
-    return news_list
+        except Exception as e:
+            st.error(f"CryptoPanic API 오류: {e}")
 
-# 4. 상단 공통 안내 (st.info)
-st.info("💡 **이용 가이드**: 아래 탭을 클릭하여 카테고리별 뉴스를 확인하세요. 기사 우측의 명령어를 복사해 Gemini에 붙여넣으면 즉시 심층 분석이 시작됩니다.")
+    # --- Case 2: Google News RSS (나머지 카테고리) ---
+    else:
+        encoded_query = urllib.parse.quote(f"{query} when:1h")
+        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+        feed = feedparser.parse(url)
+        
+        if hasattr(feed, 'entries'):
+            for entry in feed.entries[:50]:
+                try:
+                    dt_utc = pd.to_datetime(entry.published, utc=True)
+                    
+                    # [핵심] 뒷북 방지 필터: 1시간(3600초) 이상 지난 기사는 제외
+                    time_diff = (now_utc - dt_utc).total_seconds()
+                    if time_diff > 3600:
+                        continue
+                        
+                    full_title = entry.title
+                    title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
+                    source_part = entry.source.title if hasattr(entry, 'source') else "News Source"
+                    
+                    item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
+                    
+                    news_list.append({
+                        "id": item_id,
+                        "category": category_name,
+                        "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
+                        "title": title_part,
+                        "google_link": entry.link,
+                        "source": source_part,
+                        "dt": dt_utc
+                    })
+                except: continue
+                
+    return sorted(news_list, key=lambda x: x['dt'], reverse=True)
+
+# 4. 상단 공통 안내
+st.info("💡 **이용 가이드**: 탭을 클릭해 최신 뉴스를 확인하세요. 1시간 이내의 최신성 높은 기사만 노출됩니다.")
 
 # 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
 
-# 6. 각 탭별 뉴스 출력 루프 (enumerate를 추가하여 고유 키 생성)
+# 6. 각 탭별 뉴스 출력 루프
 for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())):
     with tab:
         news_data = get_news_feed(cat_name, query)
-        
-        # 현재 시간 (갱신 확인용)
         now_kst = datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')
         
         if news_data:
-            df = pd.DataFrame(news_data).sort_values(by="dt", ascending=False)
+            df = pd.DataFrame(news_data)
+            st.caption(f"🔥 현재 **{len(df)}개**의 최신 뉴스가 수집되었습니다. (마지막 갱신: {now_kst})")
             
-            # 뉴스 개수와 갱신 상태 안내
-            st.caption(f"🔥 현재 **{len(df)}개**의 최신 뉴스가 수집되었습니다. (마지막 갱신: {now_kst} | 60초 후 자동 업데이트)")
-            
-            # 행 반복 시 인덱스(i)를 가져와 widget_key에 결합
             for i, (_, row) in enumerate(df.iterrows()):
-                # 탭 인덱스 + 뉴스 인덱스 + 아이템 ID를 조합하여 중복 원천 차단
                 widget_key = f"copy_{tab_idx}_{i}_{row['id']}"
                 
                 with st.container():
                     col1, col2 = st.columns([3, 1.2])
-                    
                     with col1:
                         st.markdown(f"### {row['title']}")
                         st.caption(f"🕒 {row['time']} | 출처: {row['source']}")
                         st.link_button(f"📄 {row['source']} 원문 기사 보기", row['google_link'])
                     
                     with col2:
-                        # 분석 프롬프트
                         prompt_text = (
                             f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
                             f"1. **기사 전문 번역 및 상세 요약**\n"
@@ -103,10 +136,8 @@ for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())
                             f"4. **투자자 관점의 최종 결론**\n"
                             f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
                         )
-                        
                         st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=150, key=widget_key)
                         st.link_button("🤖 Gemini 열기", "https://gemini.google.com/app", type="primary", use_container_width=True)
-                    
                     st.divider()
         else:
             st.warning(f"현재 '{cat_name}' 카테고리에 1시간 이내 등록된 최신 뉴스가 없습니다.")
