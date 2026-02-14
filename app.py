@@ -32,7 +32,7 @@ def get_news_feed(category_name, query):
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
-    --- Case 1: CryptoPanic API (가상화폐/머스크/AI 전용) ---
+#   --- Case 1: CryptoPanic API (가상화폐/머스크/AI 전용) ---
 if query == "CRYPTO_PANIC":
     try:
         # secrets에서 키 가져오기 (이름 오타 주의!)
