@@ -2,11 +2,10 @@ import streamlit as st
 import feedparser
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime, timedelta
+from datetime import datetime
 import urllib.parse
 import pytz
 import hashlib
-import requests
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
@@ -15,105 +14,89 @@ st.title("📡 실시간 외신 테크 뉴스 허브")
 # 60초마다 화면 자동 갱신
 st_autorefresh(interval=60000, key="news_refresh")
 
+# 🔥 Google 카테고리 간 중복 방지용 전역 저장소
+if "google_seen_ids" not in st.session_state:
+    st.session_state.google_seen_ids = set()
+
 # 2. 카테고리 정의
 CATEGORIES = {
-    "AI/NVIDIA": "NVIDIA NVDA Artificial Intelligence Blackwell",
-    "반도체": "Semiconductor Chips TSMC ASML AVGO",
-    "테슬라/머스크": "Tesla TSLA Elon Musk Optimus",
-    "빅테크": "Apple Microsoft Google Meta",
-    "전력 인프라": "Data Center Energy Vertiv VRT NextEra",
-    "로보틱스": "Humanoid Robot Figure AI Boston Dynamics",
-    "가상화폐/머스크/AI": "Bitcoin Ethereum Crypto Elon Musk AI"
+    "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
+    "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO",
+    "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
+    "빅테크": "Apple OR Microsoft OR Google OR Meta",
+    "전력 인프라": "Data Center Energy OR Vertiv OR VRT OR NextEra",
+    "로보틱스": "Humanoid Robot OR Figure AI OR Boston Dynamics"
 }
 
-# 3. 뉴스 수집 함수 (Finnhub + 키워드 필터링)
+# 3. 뉴스 수집 함수 (캐싱 + 1시간 필터 + 중복 제거)
 @st.cache_data(ttl=60)
-def get_news_feed(category_name, keywords):
+def get_news_feed(category_name, query):
+    encoded_query = urllib.parse.quote(f"{query} when:1h")
+    url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+    feed = feedparser.parse(url)
+
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
-    api_key = st.secrets.get("FINNHUB_API_KEY")
-
-    if not api_key:
-        st.error("⚠️ FINNHUB_API_KEY가 설정되지 않았습니다.")
-        return []
-
-    try:
-        # 최근 1일 뉴스 호출 (Finnhub 무료 플랜 안정)
-        today = datetime.utcnow().date()
-        yesterday = today - timedelta(days=1)
-
-        url = "https://finnhub.io/api/v1/news"
-        params = {
-            "category": "general",
-            "from": yesterday.strftime("%Y-%m-%d"),
-            "to": today.strftime("%Y-%m-%d"),
-            "token": api_key
-        }
-
-        response = requests.get(url, params=params, timeout=10)
-
-        if response.status_code != 200:
-            st.error(f"Finnhub API 오류 (코드: {response.status_code})")
-            return []
-
-        data = response.json()
-
-        keyword_list = keywords.lower().split()
-
-        for entry in data:
+    if hasattr(feed, 'entries'):
+        for entry in feed.entries[:30]:
             try:
-                dt_utc = datetime.fromtimestamp(entry['datetime'], pytz.utc)
+                dt_utc = pd.to_datetime(entry.published, utc=True)
 
-                # 1시간 이내 뉴스만 허용
+                # 🔥 1시간 초과 기사 제외
                 if (now_utc - dt_utc).total_seconds() > 3600:
                     continue
 
-                title = entry['headline']
-                summary = entry.get('summary', '')
-                combined_text = f"{title} {summary}".lower()
+                full_title = entry.title
+                title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
+                source_part = entry.source.title if hasattr(entry, 'source') else "News Source"
 
-                # 키워드 필터링
-                if not any(word.lower() in combined_text for word in keyword_list):
+                # 고유 ID 생성
+                item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
+
+                # 🔥 Google 카테고리 간 중복 제거
+                if item_id in st.session_state.google_seen_ids:
                     continue
 
-                item_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                st.session_state.google_seen_ids.add(item_id)
 
                 news_list.append({
                     "id": item_id,
                     "category": category_name,
                     "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                    "title": title,
-                    "google_link": entry['url'],
-                    "source": entry.get('source', 'Finnhub'),
+                    "title": title_part,
+                    "google_link": entry.link,
+                    "source": source_part,
                     "dt": dt_utc
                 })
 
             except:
                 continue
 
-    except Exception as e:
-        st.error(f"Finnhub API 에러: {e}")
-
-    return sorted(news_list, key=lambda x: x['dt'], reverse=True)
+    return news_list
 
 
 # 4. 상단 공통 안내
-st.info("💡 **이용 가이드**: 탭을 클릭해 실시간 속보를 확인하세요. 1시간 이내의 최신 기사만 표시됩니다.")
+st.info("💡 **이용 가이드**: 아래 탭을 클릭하여 카테고리별 뉴스를 확인하세요. 기사 우측의 명령어를 복사해 Gemini에 붙여넣으면 즉시 심층 분석이 시작됩니다.")
 
 # 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
 
-# 6. 각 탭별 뉴스 출력
-for tab_idx, (tab, (cat_name, keywords)) in enumerate(zip(tabs, CATEGORIES.items())):
+# 🔥 새로고침 시 중복 초기화
+st.session_state.google_seen_ids = set()
+
+# 6. 각 탭별 뉴스 출력 루프
+for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())):
     with tab:
-        news_data = get_news_feed(cat_name, keywords)
+        news_data = get_news_feed(cat_name, query)
+
         now_kst = datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')
 
         if news_data:
-            df = pd.DataFrame(news_data)
-            st.caption(f"🔥 현재 **{len(df)}개**의 최신 뉴스가 수집되었습니다. (마지막 갱신: {now_kst})")
+            df = pd.DataFrame(news_data).sort_values(by="dt", ascending=False)
+
+            st.caption(f"🔥 현재 **{len(df)}개**의 최신 뉴스가 수집되었습니다. (마지막 갱신: {now_kst} | 60초 후 자동 업데이트)")
 
             for i, (_, row) in enumerate(df.iterrows()):
                 widget_key = f"copy_{tab_idx}_{i}_{row['id']}"
@@ -130,9 +113,15 @@ for tab_idx, (tab, (cat_name, keywords)) in enumerate(zip(tabs, CATEGORIES.items
                         prompt_text = (
                             f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
                             f"1. **기사 전문 번역 및 상세 요약**\n"
-                            f"2. **국외(글로벌) 주식 시장 연관성 분석**\n"
-                            f"3. **국내 주식 시장 연관성 분석**\n"
-                            f"4. **투자자 관점 최종 결론**"
+                            f"   - 기사 전체 내용을 한국어로 정확하게 번역\n"
+                            f"   - 핵심 내용을 놓침 없이 자세하게 요약\n\n"
+                            f"2. **국외(글로벌) 주식 시장 연관성**\n"
+                            f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
+                            f"3. **국내 주식 시장 연관성**\n"
+                            f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
+                            f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마(예: HBM, 자율주행 등)\n\n"
+                            f"4. **투자자 관점의 최종 결론**\n"
+                            f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
                         )
 
                         st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=150, key=widget_key)
@@ -141,4 +130,4 @@ for tab_idx, (tab, (cat_name, keywords)) in enumerate(zip(tabs, CATEGORIES.items
                     st.divider()
 
         else:
-            st.warning(f"현재 '{cat_name}' 카테고리에 최신 뉴스가 없습니다. (자동 필터링 중)")
+            st.warning(f"현재 '{cat_name}' 카테고리에 1시간 이내 등록된 최신 뉴스가 없습니다.")
