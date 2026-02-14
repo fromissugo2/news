@@ -2,7 +2,7 @@ import streamlit as st
 import feedparser
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime
+from datetime import datetime, timedelta
 import urllib.parse
 import pytz
 import hashlib
@@ -17,115 +17,98 @@ st_autorefresh(interval=60000, key="news_refresh")
 
 # 2. 카테고리 정의
 CATEGORIES = {
-    "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
-    "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO",
-    "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
-    "빅테크": "Apple OR Microsoft OR Google OR Meta",
-    "전력 인프라": "Data Center Energy OR Vertiv OR VRT OR NextEra",
-    "로보틱스": "Humanoid Robot OR Figure AI OR Boston Dynamics",
-    "가상화폐/머스크/AI": "CRYPTO_PANIC"
+    "AI/NVIDIA": "NVIDIA NVDA Artificial Intelligence Blackwell",
+    "반도체": "Semiconductor Chips TSMC ASML AVGO",
+    "테슬라/머스크": "Tesla TSLA Elon Musk Optimus",
+    "빅테크": "Apple Microsoft Google Meta",
+    "전력 인프라": "Data Center Energy Vertiv VRT NextEra",
+    "로보틱스": "Humanoid Robot Figure AI Boston Dynamics",
+    "가상화폐/머스크/AI": "Bitcoin Ethereum Crypto Elon Musk AI"
 }
 
-# 3. 뉴스 수집 함수
-def get_news_feed(category_name, query):
+# 3. 뉴스 수집 함수 (Finnhub + 키워드 필터링)
+@st.cache_data(ttl=60)
+def get_news_feed(category_name, keywords):
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
-    # --- Case 1: CryptoPanic API (무료 플랜 대응 버전) ---
-    if query == "CRYPTO_PANIC":
-        try:
-            api_key = st.secrets.get("CP_API_KEY")
+    api_key = st.secrets.get("FINNHUB_API_KEY")
 
-            if api_key:
-                cp_url = "https://cryptopanic.com/api/v1/posts/"
+    if not api_key:
+        st.error("⚠️ FINNHUB_API_KEY가 설정되지 않았습니다.")
+        return []
 
-                # ✅ 무료 플랜 최소 파라미터
-                params = {
-                    "auth_token": api_key
-                }
+    try:
+        # 최근 1일 뉴스 호출 (Finnhub 무료 플랜 안정)
+        today = datetime.utcnow().date()
+        yesterday = today - timedelta(days=1)
 
-                response = requests.get(cp_url, params=params, timeout=10)
+        url = "https://finnhub.io/api/v1/news"
+        params = {
+            "category": "general",
+            "from": yesterday.strftime("%Y-%m-%d"),
+            "to": today.strftime("%Y-%m-%d"),
+            "token": api_key
+        }
 
-                if response.status_code == 200:
-                    data = response.json()
+        response = requests.get(url, params=params, timeout=10)
 
-                    for entry in data.get('results', [])[:30]:
-                        try:
-                            dt_utc = pd.to_datetime(entry['published_at'], utc=True)
+        if response.status_code != 200:
+            st.error(f"Finnhub API 오류 (코드: {response.status_code})")
+            return []
 
-                            # 2시간 이내 뉴스만 허용
-                            if (now_utc - dt_utc).total_seconds() > 7200:
-                                continue
+        data = response.json()
 
-                            title = entry['title']
-                            item_id = hashlib.md5(title.encode()).hexdigest()[:12]
+        keyword_list = keywords.lower().split()
 
-                            news_list.append({
-                                "id": item_id,
-                                "category": category_name,
-                                "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                                "title": title,
-                                "google_link": entry['url'],
-                                "source": entry.get('domain', 'CryptoPanic'),
-                                "dt": dt_utc
-                            })
-                        except:
-                            continue
-                else:
-                    st.error(f"CryptoPanic API 응답 오류 (코드: {response.status_code})")
-                    st.caption(f"요청 URL: {response.url}")
+        for entry in data:
+            try:
+                dt_utc = datetime.fromtimestamp(entry['datetime'], pytz.utc)
 
-            else:
-                st.warning("⚠️ CryptoPanic API 키가 설정되지 않았습니다. Secrets 설정을 확인하세요.")
-
-        except Exception as e:
-            st.error(f"CryptoPanic API 에러: {e}")
-
-    # --- Case 2: Google News RSS ---
-    else:
-        encoded_query = urllib.parse.quote(f"{query} when:1h")
-        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
-        feed = feedparser.parse(url)
-
-        if hasattr(feed, 'entries'):
-            for entry in feed.entries[:50]:
-                try:
-                    dt_utc = pd.to_datetime(entry.published, utc=True)
-
-                    # 1시간 이상 경과 기사 제외
-                    if (now_utc - dt_utc).total_seconds() > 3600:
-                        continue
-
-                    full_title = entry.title
-                    title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
-                    source_part = entry.source.title if hasattr(entry, 'source') else "News Source"
-                    item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
-
-                    news_list.append({
-                        "id": item_id,
-                        "category": category_name,
-                        "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                        "title": title_part,
-                        "google_link": entry.link,
-                        "source": source_part,
-                        "dt": dt_utc
-                    })
-                except:
+                # 1시간 이내 뉴스만 허용
+                if (now_utc - dt_utc).total_seconds() > 3600:
                     continue
+
+                title = entry['headline']
+                summary = entry.get('summary', '')
+                combined_text = f"{title} {summary}".lower()
+
+                # 키워드 필터링
+                if not any(word.lower() in combined_text for word in keyword_list):
+                    continue
+
+                item_id = hashlib.md5(title.encode()).hexdigest()[:12]
+
+                news_list.append({
+                    "id": item_id,
+                    "category": category_name,
+                    "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
+                    "title": title,
+                    "google_link": entry['url'],
+                    "source": entry.get('source', 'Finnhub'),
+                    "dt": dt_utc
+                })
+
+            except:
+                continue
+
+    except Exception as e:
+        st.error(f"Finnhub API 에러: {e}")
 
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
+
 # 4. 상단 공통 안내
-st.info("💡 **이용 가이드**: 탭을 클릭해 실시간 속보를 확인하세요. 1시간 이내의 최신 기사만 표시됩니다. (가상화폐 탭은 2시간)")
+st.info("💡 **이용 가이드**: 탭을 클릭해 실시간 속보를 확인하세요. 1시간 이내의 최신 기사만 표시됩니다.")
 
 # 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
 
 # 6. 각 탭별 뉴스 출력
-for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())):
+for tab_idx, (tab, (cat_name, keywords)) in enumerate(zip(tabs, CATEGORIES.items())):
     with tab:
-        news_data = get_news_feed(cat_name, query)
+        news_data = get_news_feed(cat_name, keywords)
         now_kst = datetime.now(pytz.timezone('Asia/Seoul')).strftime('%H:%M:%S')
 
         if news_data:
@@ -147,15 +130,9 @@ for tab_idx, (tab, (cat_name, query)) in enumerate(zip(tabs, CATEGORIES.items())
                         prompt_text = (
                             f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
                             f"1. **기사 전문 번역 및 상세 요약**\n"
-                            f"   - 기사 전체 내용을 한국어로 정확하게 번역\n"
-                            f"   - 핵심 내용을 놓침 없이 자세하게 요약\n\n"
-                            f"2. **국외(글로벌) 주식 시장 연관성**\n"
-                            f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
-                            f"3. **국내 주식 시장 연관성**\n"
-                            f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
-                            f"   - 연관된 국내 주식 종목과 관련 테마\n\n"
-                            f"4. **투자자 관점의 최종 결론**\n"
-                            f"   - 시장 시그널 요약 및 투자 매력도 분석"
+                            f"2. **국외(글로벌) 주식 시장 연관성 분석**\n"
+                            f"3. **국내 주식 시장 연관성 분석**\n"
+                            f"4. **투자자 관점 최종 결론**"
                         )
 
                         st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=150, key=widget_key)
