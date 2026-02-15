@@ -18,13 +18,15 @@ st_autorefresh(interval=60000, key="news_refresh")
 if "seen_ids" not in st.session_state:
     st.session_state.seen_ids = set()
 
-# 2. 카테고리 정의 (직접 RSS 주소와 Google 검색 쿼리 혼합)
+# 2. 카테고리 정의 (Reuters, ZDNet 추가)
 CATEGORIES = {
     "⭐ 초속보 (Direct)": [
         "https://techcrunch.com/feed/",
         "https://www.theverge.com/rss/index.xml",
         "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=2000&keywords=technology",
-        "https://9to5mac.com/feed/"
+        "https://9to5mac.com/feed/",
+        "https://www.reutersagency.com/feed/?best-topics=technology&post_type=best",
+        "https://www.zdnet.com/news/rss.xml"
     ],
     "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
     "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO",
@@ -34,22 +36,26 @@ CATEGORIES = {
     "로보틱스": "Robot OR Robotics OR Humanoid OR 'AI Robot' OR Automation OR Boston Dynamics OR Figure AI OR Optimus"
 }
 
-# 3. 뉴스 수집 함수
+# 3. 뉴스 수집 함수 (시간 필터 완화 버전)
 @st.cache_data(ttl=60)
 def get_news_feed(category_name, source):
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
-    # --- Case 1: 직접 RSS 피드 (리스트 형태일 때) ---
     if isinstance(source, list):
         for url in source:
             feed = feedparser.parse(url)
             for entry in feed.entries[:15]:
                 try:
-                    dt_utc = pd.to_datetime(entry.published, utc=True)
-                    # 직접 RSS는 2시간 이내까지 허용 (다양성 확보)
-                    if (now_utc - dt_utc).total_seconds() > 7200:
+                    # 발행 시간 파싱 시도 (다양한 포맷 대응)
+                    if hasattr(entry, 'published_parsed'):
+                        dt_utc = datetime(*entry.published_parsed[:6], tzinfo=pytz.utc)
+                    else:
+                        dt_utc = pd.to_datetime(entry.published, utc=True)
+                    
+                    # ⭐ 초속보 탭은 6시간(21600초) 이내 기사까지 노출
+                    if (now_utc - dt_utc).total_seconds() > 21600:
                         continue
                     
                     title = entry.title
@@ -69,6 +75,9 @@ def get_news_feed(category_name, source):
                         "dt": dt_utc
                     })
                 except: continue
+    
+    # (Google News 검색 파트는 이전과 동일하므로 생략 - 그대로 유지하세요)
+    # ... 중략 ...
 
     # --- Case 2: Google News 검색 (문자열 형태일 때) ---
     else:
