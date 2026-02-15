@@ -18,6 +18,33 @@ st_autorefresh(interval=60000, key="news_refresh")
 if "seen_ids" not in st.session_state:
     st.session_state.seen_ids = set()
 
+# --- 비밀번호 설정부 ---
+def check_password():
+    """비밀번호가 맞으면 True, 아니면 False를 반환합니다."""
+    def password_entered():
+        if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # 보안을 위해 세션에서 비밀번호 삭제
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # 비밀번호 입력창 표시
+        st.text_input("🔑 접근 비밀번호를 입력하세요", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        # 비밀번호가 틀렸을 때
+        st.text_input("🔑 접근 비밀번호를 입력하세요", type="password", on_change=password_entered, key="password")
+        st.error("❌ 비밀번호가 틀렸습니다.")
+        return False
+    else:
+        # 비밀번호가 맞았을 때
+        return True
+
+# 비밀번호 체크 실행
+if not check_password():
+    st.stop()  # 비밀번호가 맞기 전까지 아래 코드를 실행하지 않음
+
 # 2. 카테고리 정의 (CNBC 전용 카테고리 추가)
 CATEGORIES = {
     "⭐ 초속보 (Direct)": [
