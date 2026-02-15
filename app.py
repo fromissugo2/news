@@ -73,22 +73,28 @@ def get_news_feed(category_name, source):
                     })
                 except: continue
 
-    # --- Case 2: CNBC 전용 필터 수집 ---
+   # --- Case 2: CNBC 전용 필터 수집 (보강 버전) ---
     elif source == "CNBC_TECH_FILTER":
         cnbc_rss_url = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=2000&keywords=technology"
         feed = feedparser.parse(cnbc_rss_url)
-        # CNBC 뉴스 중 빅테크/머스크/AI 등 관련 키워드 필터링
-        tech_keywords = ["Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google", "Meta", "Amazon", "Semiconductor", "Chip"]
         
-        for entry in feed.entries[:40]:
+        # 필터링 키워드 대폭 확장 (더 많은 뉴스 포착)
+        tech_keywords = [
+            "Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google", "Meta", "Amazon", 
+            "Semiconductor", "Chip", "OpenAI", "Blackwell", "SpaceX", "EV", "Earnings", "Fed", "Rate",
+            "Broadcom", "TSMC", "ASML", "Intelligence", "Computing", "Software"
+        ]
+        
+        for entry in feed.entries[:50]: # 더 많은 기사를 훑어봅니다.
             try:
                 title = entry.title
-                # 제목에 테크 관련 키워드가 하나라도 포함되어 있는지 확인
+                # 대소문자 구분 없이 키워드 매칭
                 if not any(kw.lower() in title.lower() for kw in tech_keywords):
                     continue
                     
                 dt_utc = pd.to_datetime(entry.published, utc=True)
-                if (now_utc - dt_utc).total_seconds() > 43200: # CNBC는 12시간까지 허용
+                # 24시간(86400초) 이내 기사까지 허용하여 공백기 방지
+                if (now_utc - dt_utc).total_seconds() > 86400:
                     continue
 
                 item_id = hashlib.md5(title.encode()).hexdigest()[:12]
