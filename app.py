@@ -18,7 +18,7 @@ st_autorefresh(interval=60000, key="news_refresh")
 if "seen_ids" not in st.session_state:
     st.session_state.seen_ids = set()
 
-# 2. 카테고리 정의 (Reuters, ZDNet 추가)
+# 2. 카테고리 정의 (CNBC 전용 카테고리 추가)
 CATEGORIES = {
     "⭐ 초속보 (Direct)": [
         "https://techcrunch.com/feed/",
@@ -28,6 +28,7 @@ CATEGORIES = {
         "https://www.reutersagency.com/feed/?best-topics=technology&post_type=best",
         "https://www.zdnet.com/news/rss.xml"
     ],
+    "📺 CNBC (Tech/Stock)": "CNBC_TECH_FILTER", # CNBC 전용 필터 예약어
     "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
     "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO",
     "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
@@ -36,50 +37,73 @@ CATEGORIES = {
     "로보틱스": "Robot OR Robotics OR Humanoid OR 'AI Robot' OR Automation OR Boston Dynamics OR Figure AI OR Optimus"
 }
 
-# 3. 뉴스 수집 함수 (시간 필터 완화 버전)
+# 3. 뉴스 수집 함수
 @st.cache_data(ttl=60)
 def get_news_feed(category_name, source):
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
+    # --- Case 1: 직접 RSS 피드 (초속보 리스트) ---
     if isinstance(source, list):
         for url in source:
             feed = feedparser.parse(url)
             for entry in feed.entries[:15]:
                 try:
-                    # 발행 시간 파싱 시도 (다양한 포맷 대응)
                     if hasattr(entry, 'published_parsed'):
                         dt_utc = datetime(*entry.published_parsed[:6], tzinfo=pytz.utc)
                     else:
                         dt_utc = pd.to_datetime(entry.published, utc=True)
                     
-                    # ⭐ 초속보 탭은 6시간(21600초) 이내 기사까지 노출
-                    if (now_utc - dt_utc).total_seconds() > 21600:
+                    if (now_utc - dt_utc).total_seconds() > 21600: # 6시간
                         continue
                     
                     title = entry.title
                     item_id = hashlib.md5(title.encode()).hexdigest()[:12]
                     
-                    if item_id in st.session_state.seen_ids:
-                        continue
+                    if item_id in st.session_state.seen_ids: continue
                     st.session_state.seen_ids.add(item_id)
 
                     news_list.append({
-                        "id": item_id,
-                        "category": category_name,
+                        "id": item_id, "category": category_name,
                         "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                        "title": title,
-                        "link": entry.link,
+                        "title": title, "link": entry.link,
                         "source": urllib.parse.urlparse(url).netloc.replace('www.', ''),
                         "dt": dt_utc
                     })
                 except: continue
-    
-    # (Google News 검색 파트는 이전과 동일하므로 생략 - 그대로 유지하세요)
-    # ... 중략 ...
 
-    # --- Case 2: Google News 검색 (문자열 형태일 때) ---
+    # --- Case 2: CNBC 전용 필터 수집 ---
+    elif source == "CNBC_TECH_FILTER":
+        cnbc_rss_url = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=2000&keywords=technology"
+        feed = feedparser.parse(cnbc_rss_url)
+        # CNBC 뉴스 중 빅테크/머스크/AI 등 관련 키워드 필터링
+        tech_keywords = ["Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google", "Meta", "Amazon", "Semiconductor", "Chip"]
+        
+        for entry in feed.entries[:40]:
+            try:
+                title = entry.title
+                # 제목에 테크 관련 키워드가 하나라도 포함되어 있는지 확인
+                if not any(kw.lower() in title.lower() for kw in tech_keywords):
+                    continue
+                    
+                dt_utc = pd.to_datetime(entry.published, utc=True)
+                if (now_utc - dt_utc).total_seconds() > 43200: # CNBC는 12시간까지 허용
+                    continue
+
+                item_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                if item_id in st.session_state.seen_ids: continue
+                st.session_state.seen_ids.add(item_id)
+
+                news_list.append({
+                    "id": item_id, "category": category_name,
+                    "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
+                    "title": title, "link": entry.link,
+                    "source": "CNBC", "dt": dt_utc
+                })
+            except: continue
+
+    # --- Case 3: Google News 검색 ---
     else:
         encoded_query = urllib.parse.quote(f"{source} when:1h")
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
@@ -87,33 +111,28 @@ def get_news_feed(category_name, source):
         for entry in feed.entries[:30]:
             try:
                 dt_utc = pd.to_datetime(entry.published, utc=True)
-                if (now_utc - dt_utc).total_seconds() > 3600:
-                    continue
+                if (now_utc - dt_utc).total_seconds() > 3600: continue
 
                 full_title = entry.title
                 title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
                 source_part = entry.source.title if hasattr(entry, 'source') else "Google News"
                 item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
 
-                if item_id in st.session_state.seen_ids:
-                    continue
+                if item_id in st.session_state.seen_ids: continue
                 st.session_state.seen_ids.add(item_id)
 
                 news_list.append({
-                    "id": item_id,
-                    "category": category_name,
+                    "id": item_id, "category": category_name,
                     "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                    "title": title_part,
-                    "link": entry.link,
-                    "source": source_part,
-                    "dt": dt_utc
+                    "title": title_part, "link": entry.link,
+                    "source": source_part, "dt": dt_utc
                 })
             except: continue
 
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
 # 4. 상단 공통 안내
-st.info("💡 **이용 가이드**: '초속보' 탭은 주요 언론사 RSS를 직접 수신하며, 나머지 탭은 Google 검색을 통해 1시간 이내 기사를 큐레이션합니다.")
+st.info("💡 **이용 가이드**: '초속보'와 'CNBC' 탭은 RSS를 직접 수신하며, 나머지는 Google 검색 1시간 이내 기사입니다.")
 
 # 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
