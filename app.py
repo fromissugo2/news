@@ -100,28 +100,31 @@ def get_news_feed(category_name, source):
                     })
                 except: continue
 
-   # --- Case 2: CNBC 전용 필터 수집 (보강 버전) ---
+  # --- Case 2: CNBC 전용 필터 수집 (공식 RSS 경로로 변경) ---
     elif source == "CNBC_TECH_FILTER":
-        cnbc_rss_url = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=2000&keywords=technology"
-        feed = feedparser.parse(cnbc_rss_url)
+        # 검색형이 아닌 공식 테크 카테고리 RSS 주소입니다.
+        cnbc_tech_url = "https://www.cnbc.com/id/19854910/device/rss/rss.html"
+        feed = feedparser.parse(cnbc_tech_url)
         
-        # 필터링 키워드 대폭 확장 (더 많은 뉴스 포착)
+        # 필터 키워드를 더 포괄적으로 조정 (주말/공백기 대비)
         tech_keywords = [
             "Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google", "Meta", "Amazon", 
-            "Semiconductor", "Chip", "OpenAI", "Blackwell", "SpaceX", "EV", "Earnings", "Fed", "Rate",
-            "Broadcom", "TSMC", "ASML", "Intelligence", "Computing", "Software"
+            "Chip", "Semiconductor", "OpenAI", "Blackwell", "Earnings", "Tech", "Software", 
+            "Computing", "Robot", "EV", "Market"
         ]
         
-        for entry in feed.entries[:50]: # 더 많은 기사를 훑어봅니다.
+        # 만약 피드가 비어있을 경우를 대비해 원본 피드에서 최대 40개를 가져옵니다.
+        for entry in feed.entries[:40]:
             try:
                 title = entry.title
-                # 대소문자 구분 없이 키워드 매칭
-                if not any(kw.lower() in title.lower() for kw in tech_keywords):
-                    continue
-                    
+                # 1. 키워드 필터링 (너무 엄격하면 비어보일 수 있어 포함 여부만 체크)
+                is_tech = any(kw.lower() in title.lower() for kw in tech_keywords)
+                
+                # 2. 시간 파싱 (안전하게 처리)
                 dt_utc = pd.to_datetime(entry.published, utc=True)
-                # 24시간(86400초) 이내 기사까지 허용하여 공백기 방지
-                if (now_utc - dt_utc).total_seconds() > 86400:
+                
+                # 3. 시간 필터 완화 (어제부터 안 떴다고 하셨으니 48시간으로 확장하여 복구)
+                if (now_utc - dt_utc).total_seconds() > 172800: # 48시간
                     continue
 
                 item_id = hashlib.md5(title.encode()).hexdigest()[:12]
@@ -132,7 +135,7 @@ def get_news_feed(category_name, source):
                     "id": item_id, "category": category_name,
                     "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
                     "title": title, "link": entry.link,
-                    "source": "CNBC", "dt": dt_utc
+                    "source": "CNBC (Official)", "dt": dt_utc
                 })
             except: continue
 
