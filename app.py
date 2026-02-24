@@ -216,3 +216,26 @@ for tab_idx, (tab, (cat_name, source)) in enumerate(zip(tabs, CATEGORIES.items()
                     st.divider()
         else:
             st.warning(f"현재 '{cat_name}' 카테고리에 최신 뉴스가 없습니다.")
+
+# ==============================
+# 📊 실시간 증시 모니터링
+# ==============================
+
+st.divider()
+st.subheader("📊 실시간 증시 모니터링")
+
+market_col1, market_col2 = st.columns(2)
+
+with market_col1:
+    st.markdown("### 🇺🇸 NASDAQ Composite (5분봉)")
+    st.components.v1.html("""
+        <iframe src="https://s.tradingview.com/widgetembed/?symbol=NASDAQ:IXIC&interval=5&theme=dark"
+        width="100%" height="400" frameborder="0"></iframe>
+    """, height=400)
+
+with market_col2:
+    st.markdown("### 🇰🇷 KOSDAQ (5분봉)")
+    st.components.v1.html("""
+        <iframe src="https://s.tradingview.com/widgetembed/?symbol=KRX:KOSDAQ&interval=5&theme=dark"
+        width="100%" height="400" frameborder="0"></iframe>
+    """, height=400)
