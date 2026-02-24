@@ -10,29 +10,31 @@ import hashlib
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
 
+st.title("📡 실시간 외신 테크 뉴스 허브")
+
 # ==============================
-# 🔥 상단 헤더 + 실시간 미니 지수 추가
+# 📊 실시간 증시 모니터링 (제목 아래 배치)
 # ==============================
 
-header_col1, header_col2 = st.columns([3, 2])
+st.subheader("📊 실시간 증시 모니터링")
 
-with header_col1:
-    st.title("📡 실시간 외신 테크 뉴스 허브")
+market_col1, market_col2 = st.columns(2)
 
-with header_col2:
-    st.markdown("#### 📊 실시간 지수 (5분봉)")
-
+with market_col1:
+    st.markdown("### 🇺🇸 NASDAQ Composite (5분봉)")
     st.components.v1.html("""
         <iframe src="https://s.tradingview.com/widgetembed/?symbol=NASDAQ:IXIC&interval=5&theme=dark"
-        width="100%" height="150" frameborder="0"></iframe>
-    """, height=150)
+        width="100%" height="400" frameborder="0"></iframe>
+    """, height=400)
 
+with market_col2:
+    st.markdown("### 🇰🇷 KOSDAQ (5분봉)")
     st.components.v1.html("""
         <iframe src="https://s.tradingview.com/widgetembed/?symbol=KRX:KOSDAQ&interval=5&theme=dark"
-        width="100%" height="150" frameborder="0"></iframe>
-    """, height=150)
+        width="100%" height="400" frameborder="0"></iframe>
+    """, height=400)
 
-# ==============================
+st.divider()
 
 # 60초마다 화면 자동 갱신
 st_autorefresh(interval=60000, key="news_refresh")
