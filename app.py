@@ -24,28 +24,24 @@ def check_password():
     def password_entered():
         if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # 보안을 위해 세션에서 비밀번호 삭제
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # 비밀번호 입력창 표시
         st.text_input("🔑 접근 비밀번호를 입력하세요", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
-        # 비밀번호가 틀렸을 때
         st.text_input("🔑 접근 비밀번호를 입력하세요", type="password", on_change=password_entered, key="password")
         st.error("❌ 비밀번호가 틀렸습니다.")
         return False
     else:
-        # 비밀번호가 맞았을 때
         return True
 
-# 비밀번호 체크 실행
 if not check_password():
-    st.stop()  # 비밀번호가 맞기 전까지 아래 코드를 실행하지 않음
+    st.stop()
 
-# 2. 카테고리 정의 (CNBC 전용 카테고리 추가)
+# 2. 카테고리 정의
 CATEGORIES = {
     "⭐ 초속보 (Direct)": [
         "https://techcrunch.com/feed/",
@@ -55,7 +51,7 @@ CATEGORIES = {
         "https://www.reutersagency.com/feed/?best-topics=technology&post_type=best",
         "https://www.zdnet.com/news/rss.xml"
     ],
-    "📺 CNBC (Tech/Stock)": "CNBC_TECH_FILTER", # CNBC 전용 필터 예약어
+    "📺 CNBC (Tech/Stock)": "CNBC_TECH_FILTER",
     "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
     "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO",
     "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
@@ -64,14 +60,12 @@ CATEGORIES = {
     "로보틱스": "Robot OR Robotics OR Humanoid OR 'AI Robot' OR Automation OR Boston Dynamics OR Figure AI OR Optimus"
 }
 
-# 3. 뉴스 수집 함수
 @st.cache_data(ttl=60)
 def get_news_feed(category_name, source):
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
-    # --- Case 1: 직접 RSS 피드 (초속보 리스트) ---
     if isinstance(source, list):
         for url in source:
             feed = feedparser.parse(url)
@@ -81,102 +75,105 @@ def get_news_feed(category_name, source):
                         dt_utc = datetime(*entry.published_parsed[:6], tzinfo=pytz.utc)
                     else:
                         dt_utc = pd.to_datetime(entry.published, utc=True)
-                    
-                    if (now_utc - dt_utc).total_seconds() > 21600: # 6시간
+
+                    if (now_utc - dt_utc).total_seconds() > 21600:
                         continue
-                    
+
                     title = entry.title
                     item_id = hashlib.md5(title.encode()).hexdigest()[:12]
-                    
-                    if item_id in st.session_state.seen_ids: continue
+
+                    if item_id in st.session_state.seen_ids:
+                        continue
                     st.session_state.seen_ids.add(item_id)
 
                     news_list.append({
-                        "id": item_id, "category": category_name,
+                        "id": item_id,
+                        "category": category_name,
                         "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                        "title": title, "link": entry.link,
+                        "title": title,
+                        "link": entry.link,
                         "source": urllib.parse.urlparse(url).netloc.replace('www.', ''),
                         "dt": dt_utc
                     })
-                except: continue
+                except:
+                    continue
 
-  # --- Case 2: CNBC 전용 필터 수집 (공식 RSS 경로로 변경) ---
     elif source == "CNBC_TECH_FILTER":
-        # 검색형이 아닌 공식 테크 카테고리 RSS 주소입니다.
         cnbc_tech_url = "https://www.cnbc.com/id/19854910/device/rss/rss.html"
         feed = feedparser.parse(cnbc_tech_url)
-        
-        # 필터 키워드를 더 포괄적으로 조정 (주말/공백기 대비)
+
         tech_keywords = [
-            "Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google", "Meta", "Amazon", 
-            "Chip", "Semiconductor", "OpenAI", "Blackwell", "Earnings", "Tech", "Software", 
+            "Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google",
+            "Meta", "Amazon", "Chip", "Semiconductor", "OpenAI",
+            "Blackwell", "Earnings", "Tech", "Software",
             "Computing", "Robot", "EV", "Market"
         ]
-        
-        # 만약 피드가 비어있을 경우를 대비해 원본 피드에서 최대 40개를 가져옵니다.
+
         for entry in feed.entries[:40]:
             try:
                 title = entry.title
-                # 1. 키워드 필터링 (너무 엄격하면 비어보일 수 있어 포함 여부만 체크)
-                is_tech = any(kw.lower() in title.lower() for kw in tech_keywords)
-                
-                # 2. 시간 파싱 (안전하게 처리)
                 dt_utc = pd.to_datetime(entry.published, utc=True)
-                
-                # 3. 시간 필터 완화 (어제부터 안 떴다고 하셨으니 48시간으로 확장하여 복구)
-                if (now_utc - dt_utc).total_seconds() > 172800: # 48시간
+
+                if (now_utc - dt_utc).total_seconds() > 172800:
                     continue
 
                 item_id = hashlib.md5(title.encode()).hexdigest()[:12]
-                if item_id in st.session_state.seen_ids: continue
+
+                if item_id in st.session_state.seen_ids:
+                    continue
                 st.session_state.seen_ids.add(item_id)
 
                 news_list.append({
-                    "id": item_id, "category": category_name,
+                    "id": item_id,
+                    "category": category_name,
                     "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                    "title": title, "link": entry.link,
-                    "source": "CNBC (Official)", "dt": dt_utc
+                    "title": title,
+                    "link": entry.link,
+                    "source": "CNBC (Official)",
+                    "dt": dt_utc
                 })
-            except: continue
+            except:
+                continue
 
-    # --- Case 3: Google News 검색 ---
     else:
         encoded_query = urllib.parse.quote(f"{source} when:1h")
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
         feed = feedparser.parse(url)
+
         for entry in feed.entries[:30]:
             try:
                 dt_utc = pd.to_datetime(entry.published, utc=True)
-                if (now_utc - dt_utc).total_seconds() > 3600: continue
+                if (now_utc - dt_utc).total_seconds() > 3600:
+                    continue
 
                 full_title = entry.title
                 title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
                 source_part = entry.source.title if hasattr(entry, 'source') else "Google News"
                 item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
 
-                if item_id in st.session_state.seen_ids: continue
+                if item_id in st.session_state.seen_ids:
+                    continue
                 st.session_state.seen_ids.add(item_id)
 
                 news_list.append({
-                    "id": item_id, "category": category_name,
+                    "id": item_id,
+                    "category": category_name,
                     "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                    "title": title_part, "link": entry.link,
-                    "source": source_part, "dt": dt_utc
+                    "title": title_part,
+                    "link": entry.link,
+                    "source": source_part,
+                    "dt": dt_utc
                 })
-            except: continue
+            except:
+                continue
 
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
-# 4. 상단 공통 안내
 st.info("💡 **이용 가이드**: '초속보'와 'CNBC' 탭은 RSS를 직접 수신하며, 나머지는 Google 검색 1시간 이내 기사입니다.")
 
-# 5. 상단 탭 구성
 tabs = st.tabs(list(CATEGORIES.keys()))
-
-# 🔥 새로고침 시 중복 초기화
 st.session_state.seen_ids = set()
 
-# 6. 각 탭별 뉴스 출력 루프
 for tab_idx, (tab, (cat_name, source)) in enumerate(zip(tabs, CATEGORIES.items())):
     with tab:
         news_data = get_news_feed(cat_name, source)
@@ -210,8 +207,12 @@ for tab_idx, (tab, (cat_name, source)) in enumerate(zip(tabs, CATEGORIES.items()
                             f"4. **투자자 관점의 최종 결론**\n"
                             f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
                         )
+
                         st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=150, key=widget_key)
+
                         st.link_button("🤖 Gemini 열기", "https://gemini.google.com/app", type="primary", use_container_width=True)
+                        st.link_button("🤖 ChatGPT 열기", "https://chat.openai.com/", use_container_width=True)
+
                     st.divider()
         else:
             st.warning(f"현재 '{cat_name}' 카테고리에 최신 뉴스가 없습니다.")
