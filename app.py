@@ -13,7 +13,7 @@ st.set_page_config(page_title="Global Tech News Hub", layout="wide")
 st.title("📡 실시간 외신 테크 뉴스 허브")
 
 # ==============================
-# 📊 실시간 증시 모니터링 (제목 아래 배치)
+# 📊 실시간 증시 모니터링 (안정 버전)
 # ==============================
 
 st.subheader("📊 실시간 증시 모니터링")
@@ -23,16 +23,44 @@ market_col1, market_col2 = st.columns(2)
 with market_col1:
     st.markdown("### 🇺🇸 NASDAQ Composite (5분봉)")
     st.components.v1.html("""
-        <iframe src="https://s.tradingview.com/widgetembed/?symbol=NASDAQ:IXIC&interval=5&theme=dark"
-        width="100%" height="400" frameborder="0"></iframe>
-    """, height=400)
+    <div id="tradingview_nasdaq"></div>
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script>
+    new TradingView.widget({
+        "width": "100%",
+        "height": 400,
+        "symbol": "NASDAQ:IXIC",
+        "interval": "5",
+        "timezone": "America/New_York",
+        "theme": "dark",
+        "style": "1",
+        "locale": "en",
+        "enable_publishing": false,
+        "container_id": "tradingview_nasdaq"
+    });
+    </script>
+    """, height=420)
 
 with market_col2:
     st.markdown("### 🇰🇷 KOSDAQ (5분봉)")
     st.components.v1.html("""
-        <iframe src="https://s.tradingview.com/widgetembed/?symbol=KRX:KOSDAQ&interval=5&theme=dark"
-        width="100%" height="400" frameborder="0"></iframe>
-    """, height=400)
+    <div id="tradingview_kosdaq"></div>
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script>
+    new TradingView.widget({
+        "width": "100%",
+        "height": 400,
+        "symbol": "KRX:KOSDAQ",
+        "interval": "5",
+        "timezone": "Asia/Seoul",
+        "theme": "dark",
+        "style": "1",
+        "locale": "kr",
+        "enable_publishing": false,
+        "container_id": "tradingview_kosdaq"
+    });
+    </script>
+    """, height=420)
 
 st.divider()
 
