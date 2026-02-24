@@ -9,7 +9,6 @@ import hashlib
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
-
 st.title("📡 실시간 외신 테크 뉴스 허브")
 
 # 60초마다 화면 자동 갱신
@@ -21,6 +20,7 @@ if "seen_ids" not in st.session_state:
 
 # --- 비밀번호 설정부 ---
 def check_password():
+    """비밀번호가 맞으면 True, 아니면 False를 반환합니다."""
     def password_entered():
         if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
@@ -101,6 +101,13 @@ def get_news_feed(category_name, source):
     elif source == "CNBC_TECH_FILTER":
         cnbc_tech_url = "https://www.cnbc.com/id/19854910/device/rss/rss.html"
         feed = feedparser.parse(cnbc_tech_url)
+
+        tech_keywords = [
+            "Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google",
+            "Meta", "Amazon", "Chip", "Semiconductor", "OpenAI",
+            "Blackwell", "Earnings", "Tech", "Software",
+            "Computing", "Robot", "EV", "Market"
+        ]
 
         for entry in feed.entries[:40]:
             try:
@@ -190,9 +197,15 @@ for tab_idx, (tab, (cat_name, source)) in enumerate(zip(tabs, CATEGORIES.items()
                         prompt_text = (
                             f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
                             f"1. **기사 전문 번역 및 상세 요약**\n"
+                            f"   - 기사 전체 내용을 한국어로 정확하게 번역\n"
+                            f"   - 핵심 내용을 놓침 없이 자세하게 요약\n\n"
                             f"2. **국외(글로벌) 주식 시장 연관성**\n"
+                            f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
                             f"3. **국내 주식 시장 연관성**\n"
-                            f"4. **투자자 관점의 최종 결론**"
+                            f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
+                            f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마(예: HBM, 자율주행 등)\n\n"
+                            f"4. **투자자 관점의 최종 결론**\n"
+                            f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
                         )
 
                         st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=150, key=widget_key)
