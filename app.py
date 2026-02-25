@@ -53,7 +53,7 @@ CATEGORIES = {
     ],
     "📺 CNBC (Tech/Stock)": "CNBC_TECH_FILTER",
     "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
-    "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO",
+    "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO OR AMD OR SAMSUNG OR SK HYNIX",
     "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
     "빅테크": "Apple OR Microsoft OR Google OR Meta",
     "전력 인프라": "Data Center Energy OR Vertiv OR VRT OR NextEra",
