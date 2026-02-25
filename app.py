@@ -106,7 +106,7 @@ def get_news_feed(category_name, source):
             "Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google",
             "Meta", "Amazon", "Chip", "Semiconductor", "OpenAI",
             "Blackwell", "Earnings", "Tech", "Software",
-            "Computing", "Robot", "EV", "Market"
+            "Computing", "Robot", "EV", "Market", "AMD", "Samsung", "SK Hynix"
         ]
 
         for entry in feed.entries[:40]:
