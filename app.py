@@ -49,14 +49,13 @@ CATEGORIES = {
         "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=2000&keywords=technology",
         "https://9to5mac.com/feed/",
         "https://www.reutersagency.com/feed/?best-topics=technology&post_type=best",
-        "https://www.zdnet.com/news/rss.xml",
-
-        # 🔥 미국 금리/연준 관련 RSS 추가
-        "https://www.reutersagency.com/feed/?best-topics=monetary-policy&post_type=best",
-        "https://www.marketwatch.com/rss/topstories",
-        "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+        "https://www.zdnet.com/news/rss.xml"
     ],
     "📺 CNBC (Tech/Stock)": "CNBC_TECH_FILTER",
+
+    # 🔥 새로 추가된 금리 전용 카테고리
+    "📈 CNBC 금리": "site:cnbc.com (Federal Reserve OR Fed OR FOMC OR 'interest rate' OR 'rate cut' OR 'rate hike' OR inflation OR CPI OR PCE OR 'Treasury yield' OR 'bond yield' OR Powell)",
+
     "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
     "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO OR AMD OR SAMSUNG OR SK HYNIX",
     "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
@@ -107,29 +106,12 @@ def get_news_feed(category_name, source):
         cnbc_tech_url = "https://www.cnbc.com/id/19854910/device/rss/rss.html"
         feed = feedparser.parse(cnbc_tech_url)
 
-        tech_keywords = [
-            "Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google",
-            "Meta", "Amazon", "Chip", "Semiconductor", "OpenAI",
-            "Blackwell", "Earnings", "Tech", "Software",
-            "Computing", "Robot", "EV", "Market", "AMD", "Samsung", "SK Hynix",
-
-            # 🔥 미국 금리/연준 키워드 추가
-            "Federal Reserve", "Fed", "FOMC", "Interest Rate",
-            "Rate Cut", "Rate Hike", "Inflation", "CPI",
-            "PCE", "Treasury Yield", "Bond Yield",
-            "Powell", "Monetary Policy"
-        ]
-
         for entry in feed.entries[:40]:
             try:
                 title = entry.title
                 dt_utc = pd.to_datetime(entry.published, utc=True)
 
                 if (now_utc - dt_utc).total_seconds() > 172800:
-                    continue
-
-                # 🔥 키워드 필터 적용
-                if not any(keyword.lower() in title.lower() for keyword in tech_keywords):
                     continue
 
                 item_id = hashlib.md5(title.encode()).hexdigest()[:12]
