@@ -49,13 +49,14 @@ CATEGORIES = {
         "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=2000&keywords=technology",
         "https://9to5mac.com/feed/",
         "https://www.reutersagency.com/feed/?best-topics=technology&post_type=best",
-        "https://www.zdnet.com/news/rss.xml"
+        "https://www.zdnet.com/news/rss.xml",
+
+        # 🔥 미국 금리/연준 관련 RSS 추가
+        "https://www.reutersagency.com/feed/?best-topics=monetary-policy&post_type=best",
+        "https://www.marketwatch.com/rss/topstories",
+        "https://www.cnbc.com/id/100003114/device/rss/rss.html"
     ],
     "📺 CNBC (Tech/Stock)": "CNBC_TECH_FILTER",
-
-    # 🔥 새로 추가된 금리 전용 카테고리
-    "📈 CNBC 금리": "site:cnbc.com (Federal Reserve OR Fed OR FOMC OR 'interest rate' OR 'rate cut' OR 'rate hike' OR inflation OR CPI OR PCE OR 'Treasury yield' OR 'bond yield' OR Powell)",
-
     "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
     "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO OR AMD OR SAMSUNG OR SK HYNIX",
     "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
@@ -106,12 +107,29 @@ def get_news_feed(category_name, source):
         cnbc_tech_url = "https://www.cnbc.com/id/19854910/device/rss/rss.html"
         feed = feedparser.parse(cnbc_tech_url)
 
+        tech_keywords = [
+            "Tesla", "Musk", "Nvidia", "AI", "Apple", "Microsoft", "Google",
+            "Meta", "Amazon", "Chip", "Semiconductor", "OpenAI",
+            "Blackwell", "Earnings", "Tech", "Software",
+            "Computing", "Robot", "EV", "Market", "AMD", "Samsung", "SK Hynix",
+
+            # 🔥 미국 금리/연준 키워드 추가
+            "Federal Reserve", "Fed", "FOMC", "Interest Rate",
+            "Rate Cut", "Rate Hike", "Inflation", "CPI",
+            "PCE", "Treasury Yield", "Bond Yield",
+            "Powell", "Monetary Policy"
+        ]
+
         for entry in feed.entries[:40]:
             try:
                 title = entry.title
                 dt_utc = pd.to_datetime(entry.published, utc=True)
 
                 if (now_utc - dt_utc).total_seconds() > 172800:
+                    continue
+
+                # 🔥 키워드 필터 적용
+                if not any(keyword.lower() in title.lower() for keyword in tech_keywords):
                     continue
 
                 item_id = hashlib.md5(title.encode()).hexdigest()[:12]
@@ -194,9 +212,15 @@ for tab_idx, (tab, (cat_name, source)) in enumerate(zip(tabs, CATEGORIES.items()
                         prompt_text = (
                             f"출처가 '{row['source']}'인 '{row['title']}' 기사를 찾아서 다음 순서로 답해줘:\n\n"
                             f"1. **기사 전문 번역 및 상세 요약**\n"
+                            f"   - 기사 전체 내용을 한국어로 정확하게 번역\n"
+                            f"   - 핵심 내용을 놓침 없이 자세하게 요약\n\n"
                             f"2. **국외(글로벌) 주식 시장 연관성**\n"
+                            f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
                             f"3. **국내 주식 시장 연관성**\n"
-                            f"4. **투자자 관점의 최종 결론**"
+                            f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
+                            f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마(예: HBM, 자율주행 등)\n\n"
+                            f"4. **투자자 관점의 최종 결론**\n"
+                            f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
                         )
 
                         st.text_area("명령어 복사 (Ctrl+C)", value=prompt_text, height=150, key=widget_key)
