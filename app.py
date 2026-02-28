@@ -12,7 +12,7 @@ import requests
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
 st.title("📡 실시간 외신 테크 뉴스 허브")
 
-# 🔥 1분마다 자동 새로고침
+# 60초마다 화면 자동 갱신
 st_autorefresh(interval=60000, key="news_refresh")
 
 # 🔥 중복 방지용 전역 저장소
@@ -56,7 +56,7 @@ BIGTECH_CIKS = {
 }
 
 HEADERS = {
-    "User-Agent": "GlobalTechNews prideugi87@email.com"
+    "User-Agent": "GlobalTechNews your@email.com"
 }
 
 @st.cache_data(ttl=60)
@@ -78,7 +78,7 @@ def get_bigtech_earnings():
             for _, row in df.head(5).iterrows():
                 filing_date = pd.to_datetime(row["filingDate"], utc=True)
 
-                # 🔥 최근 36시간 기준 필터
+                # 최근 36시간 기준
                 if (now_utc - filing_date).total_seconds() > 129600:
                     continue
 
@@ -86,7 +86,6 @@ def get_bigtech_earnings():
                 primary_doc = row["primaryDocument"]
 
                 filing_url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession}/{primary_doc}"
-
                 title = f"{company} {row['form']} Filing"
 
                 item_id = hashlib.md5((company + row["accessionNumber"]).encode()).hexdigest()[:12]
@@ -110,7 +109,7 @@ def get_bigtech_earnings():
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
 # ==============================
-# 기존 카테고리 + 실적 추가
+# 2. 카테고리 정의
 # ==============================
 
 CATEGORIES = {
@@ -135,20 +134,25 @@ CATEGORIES = {
 
 @st.cache_data(ttl=60)
 def get_news_feed(category_name, source):
-
-    if source == "SEC_EARNINGS":
-        return get_bigtech_earnings()
-
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
 
+    # 🔥 SEC 실적 분기
+    if source == "SEC_EARNINGS":
+        return get_bigtech_earnings()
+
+    # RSS 직접 수신
     if isinstance(source, list):
         for url in source:
             feed = feedparser.parse(url)
             for entry in feed.entries[:15]:
                 try:
-                    dt_utc = pd.to_datetime(entry.published, utc=True)
+                    if hasattr(entry, 'published_parsed'):
+                        dt_utc = datetime(*entry.published_parsed[:6], tzinfo=pytz.utc)
+                    else:
+                        dt_utc = pd.to_datetime(entry.published, utc=True)
+
                     if (now_utc - dt_utc).total_seconds() > 21600:
                         continue
 
@@ -171,6 +175,37 @@ def get_news_feed(category_name, source):
                 except:
                     continue
 
+    # CNBC 전용 RSS
+    elif source == "CNBC_TECH_FILTER":
+        cnbc_tech_url = "https://www.cnbc.com/id/19854910/device/rss/rss.html"
+        feed = feedparser.parse(cnbc_tech_url)
+
+        for entry in feed.entries[:40]:
+            try:
+                dt_utc = pd.to_datetime(entry.published, utc=True)
+                if (now_utc - dt_utc).total_seconds() > 172800:
+                    continue
+
+                title = entry.title
+                item_id = hashlib.md5(title.encode()).hexdigest()[:12]
+
+                if item_id in st.session_state.seen_ids:
+                    continue
+                st.session_state.seen_ids.add(item_id)
+
+                news_list.append({
+                    "id": item_id,
+                    "category": category_name,
+                    "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
+                    "title": title,
+                    "link": entry.link,
+                    "source": "CNBC (Official)",
+                    "dt": dt_utc
+                })
+            except:
+                continue
+
+    # Google News 검색
     else:
         encoded_query = urllib.parse.quote(f"{source} when:1h")
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
@@ -185,6 +220,7 @@ def get_news_feed(category_name, source):
                 full_title = entry.title
                 title_part = full_title.rsplit(' - ', 1)[0] if ' - ' in full_title else full_title
                 source_part = entry.source.title if hasattr(entry, 'source') else "Google News"
+
                 item_id = hashlib.md5(title_part.encode()).hexdigest()[:12]
 
                 if item_id in st.session_state.seen_ids:
@@ -206,7 +242,7 @@ def get_news_feed(category_name, source):
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
 # ==============================
-# UI 출력부
+# UI 출력
 # ==============================
 
 st.info("💡 '📊 빅테크 실적' 탭은 최근 36시간 기준 SEC 공시를 1분마다 모니터링합니다.")
@@ -244,7 +280,7 @@ for tab_idx, (tab, (cat_name, source)) in enumerate(zip(tabs, CATEGORIES.items()
                             f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
                             f"3. **국내 주식 시장 연관성**\n"
                             f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
-                            f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마\n\n"
+                            f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마(예: HBM, 자율주행 등)\n\n"
                             f"4. **투자자 관점의 최종 결론**\n"
                             f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
                         )
