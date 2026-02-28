@@ -12,7 +12,7 @@ import requests
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
 st.title("📡 실시간 외신 테크 뉴스 허브")
 
-# 60초마다 화면 자동 갱신
+# 🔥 1분마다 자동 새로고침
 st_autorefresh(interval=60000, key="news_refresh")
 
 # 🔥 중복 방지용 전역 저장소
@@ -42,7 +42,7 @@ if not check_password():
     st.stop()
 
 # ==============================
-# 📊 빅테크 SEC 실적 모니터링
+# 📊 빅테크 SEC 실적 모니터링 (최근 36시간)
 # ==============================
 
 BIGTECH_CIKS = {
@@ -56,7 +56,7 @@ BIGTECH_CIKS = {
 }
 
 HEADERS = {
-    "User-Agent": "GlobalTechNews your@email.com"
+    "User-Agent": "GlobalTechNews prideugi87@email.com"
 }
 
 @st.cache_data(ttl=60)
@@ -78,7 +78,8 @@ def get_bigtech_earnings():
             for _, row in df.head(5).iterrows():
                 filing_date = pd.to_datetime(row["filingDate"], utc=True)
 
-                if (now_utc - filing_date).total_seconds() > 86400:
+                # 🔥 최근 36시간 기준 필터
+                if (now_utc - filing_date).total_seconds() > 129600:
                     continue
 
                 accession = row["accessionNumber"].replace("-", "")
@@ -208,7 +209,7 @@ def get_news_feed(category_name, source):
 # UI 출력부
 # ==============================
 
-st.info("💡 '📊 빅테크 실적' 탭은 SEC EDGAR 공식 공시를 실시간 모니터링합니다.")
+st.info("💡 '📊 빅테크 실적' 탭은 최근 36시간 기준 SEC 공시를 1분마다 모니터링합니다.")
 
 tabs = st.tabs(list(CATEGORIES.keys()))
 st.session_state.seen_ids = set()
@@ -243,7 +244,7 @@ for tab_idx, (tab, (cat_name, source)) in enumerate(zip(tabs, CATEGORIES.items()
                             f"   - 해당 소식으로 영향을 받는 미국 등 해외 주요 종목과 섹터 분석\n\n"
                             f"3. **국내 주식 시장 연관성**\n"
                             f"   - 국내 시장에서도 영향이 있을지 여부와 구체적인 이유\n"
-                            f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마(예: HBM, 자율주행 등)\n\n"
+                            f"   - 연관된 국내 주식 종목(수혜주/피해주)과 관련 테마\n\n"
                             f"4. **투자자 관점의 최종 결론**\n"
                             f"   - 이 기사가 시장에 주는 시그널 요약 및 투자 매력도 분석"
                         )
