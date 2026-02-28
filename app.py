@@ -6,6 +6,7 @@ from datetime import datetime
 import urllib.parse
 import pytz
 import hashlib
+import requests
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Global Tech News Hub", layout="wide")
@@ -20,7 +21,6 @@ if "seen_ids" not in st.session_state:
 
 # --- 비밀번호 설정부 ---
 def check_password():
-    """비밀번호가 맞으면 True, 아니면 False를 반환합니다."""
     def password_entered():
         if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
@@ -41,7 +41,77 @@ def check_password():
 if not check_password():
     st.stop()
 
-# 2. 카테고리 정의
+# ==============================
+# 📊 빅테크 SEC 실적 모니터링
+# ==============================
+
+BIGTECH_CIKS = {
+    "Apple": "0000320193",
+    "Microsoft": "0000789019",
+    "Tesla": "0001318605",
+    "NVIDIA": "0001045810",
+    "AMD": "0000002488",
+    "Meta": "0001326801",
+    "Alphabet": "0001652044"
+}
+
+HEADERS = {
+    "User-Agent": "GlobalTechNews your@email.com"
+}
+
+@st.cache_data(ttl=60)
+def get_bigtech_earnings():
+    news_list = []
+    kst = pytz.timezone('Asia/Seoul')
+    now_utc = datetime.now(pytz.utc)
+
+    for company, cik in BIGTECH_CIKS.items():
+        try:
+            url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            data = r.json()
+
+            filings = data["filings"]["recent"]
+            df = pd.DataFrame(filings)
+            df = df[df["form"].isin(["8-K", "10-Q", "10-K"])]
+
+            for _, row in df.head(5).iterrows():
+                filing_date = pd.to_datetime(row["filingDate"], utc=True)
+
+                if (now_utc - filing_date).total_seconds() > 86400:
+                    continue
+
+                accession = row["accessionNumber"].replace("-", "")
+                primary_doc = row["primaryDocument"]
+
+                filing_url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession}/{primary_doc}"
+
+                title = f"{company} {row['form']} Filing"
+
+                item_id = hashlib.md5((company + row["accessionNumber"]).encode()).hexdigest()[:12]
+
+                if item_id in st.session_state.seen_ids:
+                    continue
+                st.session_state.seen_ids.add(item_id)
+
+                news_list.append({
+                    "id": item_id,
+                    "category": "📊 빅테크 실적 (SEC)",
+                    "time": filing_date.astimezone(kst).strftime('%m/%d %H:%M'),
+                    "title": title,
+                    "link": filing_url,
+                    "source": "SEC EDGAR",
+                    "dt": filing_date
+                })
+        except:
+            continue
+
+    return sorted(news_list, key=lambda x: x['dt'], reverse=True)
+
+# ==============================
+# 기존 카테고리 + 실적 추가
+# ==============================
+
 CATEGORIES = {
     "⭐ 초속보 (Direct)": [
         "https://techcrunch.com/feed/",
@@ -52,20 +122,22 @@ CATEGORIES = {
         "https://www.zdnet.com/news/rss.xml"
     ],
     "📺 CNBC (Tech/Stock)": "CNBC_TECH_FILTER",
-
-    # 🔥 새로 추가된 금리 전용 카테고리
     "📈 CNBC 금리": "site:cnbc.com (Federal Reserve OR Fed OR FOMC OR 'interest rate' OR 'rate cut' OR 'rate hike' OR inflation OR CPI OR PCE OR 'Treasury yield' OR 'bond yield' OR Powell)",
-
     "AI/NVIDIA": "NVIDIA OR NVDA OR 'Artificial Intelligence' OR Blackwell",
     "반도체": "Semiconductor OR Chips OR TSMC OR ASML OR AVGO OR AMD OR SAMSUNG OR SK HYNIX",
     "테슬라/머스크": "Tesla OR TSLA OR 'Elon Musk' OR Optimus",
     "빅테크": "Apple OR Microsoft OR Google OR Meta",
     "전력 인프라": "Data Center Energy OR Vertiv OR VRT OR NextEra",
-    "로보틱스": "Robot OR Robotics OR Humanoid OR 'AI Robot' OR Automation OR Boston Dynamics OR Figure AI OR Optimus"
+    "로보틱스": "Robot OR Robotics OR Humanoid OR 'AI Robot' OR Automation OR Boston Dynamics OR Figure AI OR Optimus",
+    "📊 빅테크 실적 (SEC)": "SEC_EARNINGS"
 }
 
 @st.cache_data(ttl=60)
 def get_news_feed(category_name, source):
+
+    if source == "SEC_EARNINGS":
+        return get_bigtech_earnings()
+
     news_list = []
     kst = pytz.timezone('Asia/Seoul')
     now_utc = datetime.now(pytz.utc)
@@ -75,11 +147,7 @@ def get_news_feed(category_name, source):
             feed = feedparser.parse(url)
             for entry in feed.entries[:15]:
                 try:
-                    if hasattr(entry, 'published_parsed'):
-                        dt_utc = datetime(*entry.published_parsed[:6], tzinfo=pytz.utc)
-                    else:
-                        dt_utc = pd.to_datetime(entry.published, utc=True)
-
+                    dt_utc = pd.to_datetime(entry.published, utc=True)
                     if (now_utc - dt_utc).total_seconds() > 21600:
                         continue
 
@@ -101,36 +169,6 @@ def get_news_feed(category_name, source):
                     })
                 except:
                     continue
-
-    elif source == "CNBC_TECH_FILTER":
-        cnbc_tech_url = "https://www.cnbc.com/id/19854910/device/rss/rss.html"
-        feed = feedparser.parse(cnbc_tech_url)
-
-        for entry in feed.entries[:40]:
-            try:
-                title = entry.title
-                dt_utc = pd.to_datetime(entry.published, utc=True)
-
-                if (now_utc - dt_utc).total_seconds() > 172800:
-                    continue
-
-                item_id = hashlib.md5(title.encode()).hexdigest()[:12]
-
-                if item_id in st.session_state.seen_ids:
-                    continue
-                st.session_state.seen_ids.add(item_id)
-
-                news_list.append({
-                    "id": item_id,
-                    "category": category_name,
-                    "time": dt_utc.astimezone(kst).strftime('%m/%d %H:%M'),
-                    "title": title,
-                    "link": entry.link,
-                    "source": "CNBC (Official)",
-                    "dt": dt_utc
-                })
-            except:
-                continue
 
     else:
         encoded_query = urllib.parse.quote(f"{source} when:1h")
@@ -166,7 +204,11 @@ def get_news_feed(category_name, source):
 
     return sorted(news_list, key=lambda x: x['dt'], reverse=True)
 
-st.info("💡 **이용 가이드**: '초속보'와 'CNBC' 탭은 RSS를 직접 수신하며, 나머지는 Google 검색 1시간 이내 기사입니다.")
+# ==============================
+# UI 출력부
+# ==============================
+
+st.info("💡 '📊 빅테크 실적' 탭은 SEC EDGAR 공식 공시를 실시간 모니터링합니다.")
 
 tabs = st.tabs(list(CATEGORIES.keys()))
 st.session_state.seen_ids = set()
@@ -185,6 +227,7 @@ for tab_idx, (tab, (cat_name, source)) in enumerate(zip(tabs, CATEGORIES.items()
 
                 with st.container():
                     col1, col2 = st.columns([3, 1.2])
+
                     with col1:
                         st.markdown(f"### {row['title']}")
                         st.caption(f"🕒 {row['time']} | 출처: {row['source']}")
